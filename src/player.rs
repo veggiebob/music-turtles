@@ -22,11 +22,14 @@ impl Player {
     }
     pub fn play(&self, source: impl Source<Item=f32> + Send + 'static) {
         let sink = rodio::Sink::try_new(&self.output_stream).unwrap();
-        thread::spawn(move || {
-            let source: Box<dyn Source<Item=f32> + Send> = Box::new(source);
-            sink.append(source);
-            sink.sleep_until_end();
-        });
+        // thread::spawn(move || {
+        //     let source: Box<dyn Source<Item=f32> + Send> = Box::new(source);
+        //     sink.append(source);
+        //     sink.sleep_until_end();
+        // });
+        let source: Box<dyn Source<Item=f32> + Send> = Box::new(source);
+        sink.append(source);
+        sink.detach();
     }
 
     /// Incoming events MUST BE IN ORDER
@@ -39,9 +42,9 @@ impl Player {
             let current_time = SystemTime::now();
             let elapsed = current_time.duration_since(start_time).unwrap().as_secs_f32();
             let wait_time = start - elapsed;
-            println!("Waiting for {wait_time} until {start}... (sound is {duration}s long)");
+            // println!("Waiting for {wait_time} until {start}... (sound is {duration}s long)");
             if wait_time > 0. {
-                std::thread::sleep(std::time::Duration::from_secs_f32(wait_time));
+                thread::sleep(std::time::Duration::from_secs_f32(wait_time));
             }
             end = SystemTime::max(end, current_time + std::time::Duration::from_secs_f32(f32::max(wait_time, 0.) + duration));
             self.play(source);

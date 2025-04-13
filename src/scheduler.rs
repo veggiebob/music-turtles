@@ -91,7 +91,6 @@ impl Scheduler {
                     track.get_events_starting_between(*cursor, end_music_time, true)
                 };
                 *cursor = end_music_time;
-                println!("cursor moved to {cursor:?}. looping {looping}.");
                 // make sure looped sounds happen afterward
                 events.into_iter()
                     .map(|e| {

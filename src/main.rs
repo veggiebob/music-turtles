@@ -12,6 +12,7 @@ mod player;
 mod scheduler;
 mod composition;
 mod time;
+mod cfg;
 
 pub fn run<S: DerefMut<Target=Scheduler> + Send>(scheduler: S, scheduler_tick_ms: u64, player: Player) {
     let (event_send, event_recv) = mpsc::channel();
@@ -23,7 +24,6 @@ pub fn run<S: DerefMut<Target=Scheduler> + Send>(scheduler: S, scheduler_tick_ms
                 let elapsed_s = start_time.elapsed().unwrap().as_secs_f32();
                 let sc = scheduler.deref_mut();
                 let events = sc.get_next_events_and_update(elapsed_s);
-                println!("Check-in. Current time {elapsed_s}. New events: {}", events.len());
                 for event in events {
                     event_send.send(event).unwrap();
                 }

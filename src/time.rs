@@ -123,6 +123,12 @@ impl Sub<MusicTime> for MusicTimeWithSignature {
     }
 }
 
+impl MusicTimeWithSignature {
+    pub fn total_beats(&self) -> Beat {
+        Beat::new(self.time.0 * self.time_signature.0 as BeatUnit, 1) + self.time.1
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
