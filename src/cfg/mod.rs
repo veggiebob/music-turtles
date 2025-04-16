@@ -1,62 +1,63 @@
-mod scan;
+pub mod scan;
+mod interactive;
 
-use std::collections::HashMap;
+use crate::cfg::scan::Scanner;
+use crate::cfg::scan::{consume, MusicStringScanner, ScanError};
 use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
-use crate::time::{MusicTime, TimeSignature};
+use crate::time::{BeatUnit, MusicTime, TimeSignature};
+use std::collections::HashMap;
+use std::str::FromStr;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grammar {
     start: NonTerminal,
-    productions: Vec<(NonTerminal, MusicString)>
+    productions: Vec<Production>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Production(NonTerminal, MusicString);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MusicString(pub Vec<MusicPrimitive>);
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MusicPrimitive {
     Simple(Symbol),
     Split(Vec<MusicString>),
-    Repeat(usize, MusicString)
+    Repeat(usize, MusicString),
 }
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Symbol {
     NT(NonTerminal),
-    T(Terminal)
+    T(Terminal),
 }
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NonTerminal {
-    Custom(String)
+    Custom(String),
 }
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Terminal {
     Music {
         duration: MusicTime,
-        note: TerminalNote
+        note: TerminalNote,
     },
-    Meta(MetaControl)
+    Meta(MetaControl),
 }
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TerminalNote {
     Note(Pitch),
-    Rest
+    Rest,
 }
 
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MetaControl {
     ChangeInstrument(Instrument),
-    ChangeVolume(Volume)
+    ChangeVolume(Volume),
 }
 
 impl MusicString {
@@ -66,11 +67,14 @@ impl MusicString {
             if let Some(mut track) = tracks.get_mut(&instrument) {
                 track.events.push(e);
             } else {
-                tracks.insert(instrument, Track {
-                    identifier: TrackId::Instrument(instrument),
+                tracks.insert(
                     instrument,
-                    events: vec![e],
-                });
+                    Track {
+                        identifier: TrackId::Instrument(instrument),
+                        instrument,
+                        events: vec![e],
+                    },
+                );
             }
         }
         fn add_track(tracks: &mut HashMap<Instrument, Track>, track: Track) {
@@ -90,43 +94,44 @@ impl MusicString {
         let mut current_volume = Volume(50);
         for mp in self.0.iter() {
             let duration = match mp {
-                MusicPrimitive::Simple(sym) => {
-                    match sym {
-                        Symbol::NT(_) => {
-                            MusicTime::zero()
+                MusicPrimitive::Simple(sym) => match sym {
+                    Symbol::NT(_) => MusicTime::zero(),
+                    Symbol::T(Terminal::Music { note, duration }) => match note {
+                        TerminalNote::Note(pitch) => {
+                            add_event(
+                                &mut tracks,
+                                Event {
+                                    start: current_mt,
+                                    duration: duration.with(time_signature).total_beats(),
+                                    volume: current_volume,
+                                    pitch: *pitch,
+                                },
+                                current_instrument,
+                            );
+                            *duration
                         }
-                        Symbol::T(Terminal::Music {note, duration}) => {
-                            match note {
-                                TerminalNote::Note(pitch) => {
-                                    add_event(&mut tracks, Event {
-                                        start: current_mt,
-                                        duration: duration.with(time_signature).total_beats(),
-                                        volume: current_volume,
-                                        pitch: *pitch,
-                                    }, current_instrument);
-                                    *duration
-                                }
-                                TerminalNote::Rest => {
-                                    *duration
-                                }
+                        TerminalNote::Rest => *duration,
+                    },
+                    Symbol::T(Terminal::Meta(control)) => {
+                        match control {
+                            MetaControl::ChangeInstrument(i) => {
+                                current_instrument = *i;
+                            }
+                            MetaControl::ChangeVolume(v) => {
+                                current_volume = *v;
                             }
                         }
-                        Symbol::T(Terminal::Meta(control)) => {
-                            match control {
-                                MetaControl::ChangeInstrument(i) => {
-                                    current_instrument = *i;
-                                }
-                                MetaControl::ChangeVolume(v) => {
-                                    current_volume = *v;
-                                }
-                            }
-                            MusicTime::zero()
-                        }
+                        MusicTime::zero()
                     }
-                }
+                },
                 MusicPrimitive::Split(mss) => {
-                    let comps: Vec<_> = mss.into_iter()
+                    let comps: Vec<_> = mss
+                        .into_iter()
                         .map(|ms| ms.compose(time_signature))
+                        .map(|mut c| {
+                            c.shift_by(current_mt);
+                            c
+                        })
                         .map(|c| (c.get_duration(), c))
                         .collect();
                     let uniform_duration = match comps.first() {
@@ -136,9 +141,9 @@ impl MusicString {
                             } else {
                                 None
                             }
-                        },
+                        }
                         // there are none, so yes they are
-                        None => None
+                        None => None,
                     };
                     if let Some(dur) = uniform_duration {
                         for (_d, comp) in comps {
@@ -146,7 +151,9 @@ impl MusicString {
                         }
                         dur
                     } else {
-                        panic!("Not all split tracks have the same duration!!");
+                        panic!("Not all split tracks have the same duration: {:?}",
+                            comps.iter().map(|(d, c)| d).collect::<Vec<_>>()
+                        )
                     }
                 }
                 MusicPrimitive::Repeat(n, ms) => {
@@ -172,5 +179,14 @@ impl MusicString {
             tracks: tracks.into_values().collect(),
             time_signature,
         }
+    }
+}
+
+impl FromStr for MusicString {
+    type Err = ScanError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let scanner = consume(MusicStringScanner);
+        scanner.scan(s).map(|(r, _s)| r)
     }
 }

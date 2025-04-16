@@ -1,9 +1,10 @@
 use std::ops::Add;
 use std::collections::HashMap;
 use std::str::FromStr;
+use serde::{Deserialize, Serialize};
 use crate::time::{Beat, MusicTime, TimeSignature};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Serialize, Deserialize)]
 pub enum Instrument {
     SineWave
 }
@@ -15,7 +16,7 @@ pub type Octave = i8;
 pub type Frequency = f32;
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Pitch(pub Octave, pub NoteNum);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -41,7 +42,7 @@ pub struct Event {
 
 pub const MAX_VOLUME: u32 = 100;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Volume(pub u32);
 
 impl Volume {

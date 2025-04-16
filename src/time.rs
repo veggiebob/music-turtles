@@ -1,13 +1,15 @@
 use std::ops::{Add, Sub};
 use num::rational::Ratio;
 use num::{FromPrimitive, ToPrimitive, Zero};
+use serde::{Deserialize, Serialize, Serializer};
+use serde::ser::SerializeStruct;
 
 pub type Seconds = f32;
 
 /// Represents either a duration or absolute position in music.
 /// The measures must be positive. The beats should also be positive, and constrained
 /// within the measure, if it is an absolute position.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct MusicTime(pub Measure, pub Beat);
 
 pub type BPM = f32;
@@ -54,6 +56,20 @@ impl Beat {
     pub fn zero() -> Self {
         Beat(Ratio::zero())
     }
+    
+    pub fn numerator(&self) -> BeatUnit {
+        self.0.numer().to_u32().unwrap_or_else(|| {
+            println!("WARNING: Beat {self:?} numerator could not be converted to u32. Defaulting to 0.");
+            0
+        })
+    }
+    
+    pub fn denominator(&self) -> BeatUnit {
+        self.0.denom().to_u32().unwrap_or_else(|| {
+            println!("WARNING: Beat {self:?} denominator could not be converted to u32. Defaulting to 1.");
+            1
+        })
+    }
 }
 
 impl MusicTime {
@@ -69,6 +85,12 @@ impl MusicTime {
         let beats = bps * seconds;
         let beats = Beat(Ratio::from_f32(beats).unwrap());
         beats.as_music_time(time_signature)
+    }
+    
+    pub fn from_whole_beats(time_signature: TimeSignature, beats: BeatUnit) -> Self {
+        let measures = beats / time_signature.0;
+        let beats = beats % time_signature.0;
+        MusicTime(measures, Beat::whole(beats))
     }
 
     pub fn to_seconds(&self, time_signature: TimeSignature, bpm: BPM) -> Seconds {
@@ -125,11 +147,12 @@ impl Sub<MusicTime> for MusicTimeWithSignature {
         let MusicTime(measure, beat) = self.time;
         let MusicTime(measure2, beat2) = rhs;
         let mut new_measure = measure - measure2;
-        let mut new_beat = beat - beat2;
-        while new_beat.0 < Ratio::zero() {
+        let mut new_beat = beat;
+        if beat2 > new_beat {
+            new_beat = new_beat + Beat::whole(self.time_signature.0);
             new_measure -= 1;
-            new_beat.0 += self.time_signature.0; // add number of beats in a measure
         }
+        new_beat = new_beat - beat2;
         let MusicTime(beat_measures, beats) = new_beat.as_music_time(self.time_signature);
         MusicTime(beat_measures + new_measure, beats)
     }
@@ -147,6 +170,36 @@ impl TimeSignature {
     }
 }
 
+impl Serialize for Beat {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+    {
+        let mut state = serializer.serialize_struct("Beat", 2)?;
+        let num = self.numerator();
+        let denom = self.denominator();
+        state.serialize_field("numerator", &num)?;
+        state.serialize_field("denominator", &denom)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Beat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        #[derive(Deserialize)]
+        struct Beat {
+            numerator: u32,
+            denominator: u32,
+        }
+
+        let data = Beat::deserialize(deserializer)?;
+        Ok(crate::Beat::new(data.numerator, data.denominator))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -159,4 +212,28 @@ mod test {
         assert!(mt2 > mt1);
     }
 
+    #[test]
+    fn test_music_time_sub_1() {
+        let ts = TimeSignature::common();
+        let mt1 = MusicTime(1, Beat::whole(0));
+        let mt2 = MusicTime(0, Beat::whole(3));
+        assert_eq!(mt1.with(ts) - mt2, MusicTime(0, Beat::whole(1)));
+    }
+    
+    #[test]
+    fn test_music_time_sub_2() {
+        let ts = TimeSignature::common();
+        let mt1 = MusicTime(1, Beat::whole(3));
+        let mt2 = MusicTime(0, Beat::whole(0));
+        assert_eq!(mt1.with(ts) - mt2, MusicTime(1, Beat::whole(3)));
+    }
+
+    #[test]
+    fn test_music_time_sub_3() {
+        let ts = TimeSignature::common();
+        let mt1 = MusicTime(2, Beat::whole(0));
+        let mt2 = MusicTime(0, Beat::whole(3));
+        assert_eq!(mt1.with(ts) - mt2, MusicTime(1, Beat::whole(1)));
+    }
 }
+

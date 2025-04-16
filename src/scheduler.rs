@@ -74,7 +74,7 @@ impl Scheduler {
     pub fn get_next_events_and_update(&mut self, current_track_pos: Seconds) -> Vec<ScheduledSound> {
         let mut current_music_time = MusicTime::from_seconds(self.time_signature, self.bpm, current_track_pos);
         let loop_end = self.loop_time;
-        while current_music_time > loop_end {
+        while self.looped && current_music_time > loop_end {
             current_music_time = current_music_time.with(self.time_signature) - loop_end;
         }
         let loop_time_s = self.loop_time.to_seconds(self.time_signature, self.bpm);
@@ -89,20 +89,18 @@ impl Scheduler {
             false
         };
         let mut sounds = self.tracks.iter_mut()
-            .map(|(track, cursor)| {
+            .flat_map(|(track, cursor)| {
                 let be_exclusive = *cursor != MusicTime::zero();
                 let events = if looping {
                     if end_non_looped < *cursor {
                         vec![]
+                    } else if *cursor <= end_music_time {
+                        track.get_events_starting_between(*cursor, end_music_time, be_exclusive)
                     } else {
-                        if *cursor <= end_music_time {
-                            track.get_events_starting_between(*cursor, end_music_time, be_exclusive)
-                        } else {
-                            let mut to_end = track.get_events_starting_between(*cursor, loop_end, be_exclusive);
-                            let from_beg = track.get_events_starting_between(MusicTime::zero(), end_music_time, false);
-                            to_end.extend(from_beg);
-                            to_end
-                        }
+                        let mut to_end = track.get_events_starting_between(*cursor, loop_end, be_exclusive);
+                        let from_beg = track.get_events_starting_between(MusicTime::zero(), end_music_time, false);
+                        to_end.extend(from_beg);
+                        to_end
                     }
                 } else {
                     track.get_events_starting_between(*cursor, end_music_time, be_exclusive)
@@ -132,7 +130,6 @@ impl Scheduler {
                         se
                     }).collect::<Vec<_>>()
             })
-            .flatten()
             .collect::<Vec<_>>();
         sounds.sort_by(|a: &ScheduledSound, b: &ScheduledSound| a.partial_cmp(b).unwrap());
         sounds

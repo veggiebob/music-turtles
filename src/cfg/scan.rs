@@ -43,11 +43,9 @@ B = :0c
 
 */
 
-use crate::cfg::{
-    Grammar, MetaControl, MusicPrimitive, MusicString, NonTerminal, Symbol, Terminal, TerminalNote,
-};
+use crate::cfg::{Grammar, MetaControl, MusicPrimitive, MusicString, NonTerminal, Production, Symbol, Terminal, TerminalNote};
 use crate::composition::{Instrument, Octave, Pitch, Volume};
-use crate::time::MusicTime;
+use crate::time::{Beat, BeatUnit, MusicTime};
 
 
 #[derive(Debug)]
@@ -119,15 +117,15 @@ impl Scanner for GrammarScanner {
 }
 
 impl Scanner for ProductionScanner {
-    type Output = (NonTerminal, MusicString);
+    type Output = Production;
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        concat(
+        scan_map(concat(
             scan_map(
                 concat(NonTerminalScanner, trim(StringScanner("=".to_string()))),
                 |(nt, _s)| NonTerminal::Custom(nt),
             ),
             MusicStringScanner,
-        )
+        ), |(nt, str)| Production(nt, str))
         .scan(input)
     }
 }
@@ -142,6 +140,9 @@ impl Scanner for MusicStringScanner {
         while !remaining_input.is_empty() {
             // skip to the first non-whitespace character
             remaining_input = remaining_input.trim_start();
+            if remaining_input.is_empty() {
+                break;
+            }
             match MusicPrimitiveScanner.scan(remaining_input) {
                 Ok((primitive, new_input)) => {
                     music_string.push(primitive);
@@ -735,7 +736,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_instrument() {
         let input = "sine";
@@ -744,7 +745,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_volume() {
         let input = "20";
@@ -753,7 +754,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_note() {
         let input = "4c#";
@@ -762,7 +763,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_rest() {
         let input = "_";
@@ -771,7 +772,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_meta_control() {
         let input = "i=sine";
@@ -789,7 +790,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_terminal() {
         let input = "4c<1>";
@@ -798,7 +799,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_nonterminal() {
         let input = "S-b";
@@ -807,7 +808,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn symbol_scanner_1() {
         let input = ":bb";
@@ -834,7 +835,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn music_string_scanner_1() {
         // without any repeats or splits so far
@@ -844,7 +845,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn music_primitive_repeat_scanner() {
         let input = "[3][:4c<1> :4d :_ :f# :g :c ::i=sine B]";
@@ -853,7 +854,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn music_primitive_split_scanner() {
         let input = "{:4c<1> :4d :_ :f# :g :c ::i=sine B | :4c<1> :4d :_ :f# :g :c ::i=sine B }";
@@ -862,7 +863,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn music_string_scanner_2() {
         // with splits and repeats
@@ -872,7 +873,7 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn production_scanner_1() {
         let input = "S = [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]";
