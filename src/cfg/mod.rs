@@ -1,10 +1,12 @@
+mod scan;
+
 use std::collections::HashMap;
 use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
 use crate::time::{MusicTime, TimeSignature};
 
-/// Grammars that generate MusicStrings
-pub struct GrammarProduction {
-    // todo: all the productions codified so that they can be undone
+pub struct Grammar {
+    start: NonTerminal,
+    productions: Vec<(NonTerminal, MusicString)>
 }
 
 pub struct MusicString(pub Vec<MusicPrimitive>);
@@ -32,19 +34,14 @@ pub enum Terminal {
     Meta(MetaControl)
 }
 
-pub enum MetaControl {
-    ChangeInstrument(Instrument),
-    ChangeVolume(Volume)
-}
-
 pub enum TerminalNote {
     Note(Pitch),
     Rest
 }
 
-pub struct Grammar {
-    start: Symbol,
-    productions: Vec<(Symbol, MusicString)>
+pub enum MetaControl {
+    ChangeInstrument(Instrument),
+    ChangeVolume(Volume)
 }
 
 impl MusicString {
