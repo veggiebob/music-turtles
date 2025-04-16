@@ -21,6 +21,9 @@ pub fn run<S: DerefMut<Target=Scheduler> + Send>(scheduler: S, scheduler_tick_ms
             let start_time = SystemTime::now();
             let mut scheduler = scheduler;
             loop {
+                if scheduler.ended() {
+                    break;
+                }
                 let elapsed_s = start_time.elapsed().unwrap().as_secs_f32();
                 let sc = scheduler.deref_mut();
                 let events = sc.get_next_events_and_update(elapsed_s);
@@ -102,4 +105,59 @@ fn main() {
         loop_time: MusicTime(1, Beat::zero()),
     };
     run(&mut scheduler, 50, player);
+}
+
+
+#[cfg(test)]
+mod test {
+    use std::thread;
+    use std::time::Duration;
+    use crate::cfg::{MusicPrimitive, MusicString, Symbol, Terminal, TerminalNote};
+    use crate::composition::Pitch;
+    use crate::player::Player;
+    use crate::run;
+    use crate::scheduler::Scheduler;
+    use crate::time::{MusicTime, TimeSignature};
+
+    #[test]
+    fn compose_something() {
+        let string = MusicString(vec![
+            MusicPrimitive::Split(vec![
+                MusicString(vec![
+                    MusicPrimitive::Simple(Symbol::T(Terminal::Music {
+                        note: TerminalNote::Note(Pitch(4, 0)),
+                        duration: MusicTime::beats(1)
+                    }))]
+                ),
+                MusicString(vec![
+                    MusicPrimitive::Simple(Symbol::T(Terminal::Music {
+                        note: TerminalNote::Note(Pitch(4, 4)),
+                        duration: MusicTime::beats(1)
+                    }))]
+                ),
+            ])
+            // MusicPrimitive::Simple(Symbol::T(Terminal::Music {
+            //     note: TerminalNote::Note(Pitch(4, 2)),
+            //     duration: MusicTime::beats(1)
+            // })),
+            // MusicPrimitive::Simple(Symbol::T(Terminal::Music {
+            //     note: TerminalNote::Note(Pitch(4, 4)),
+            //     duration: MusicTime::beats(1)
+            // })),
+        ]);
+        let music = string.compose(TimeSignature::common());
+        println!("{music:#?}");
+        let mut scheduler = Scheduler {
+            bpm: 80.0,
+            time_signature: TimeSignature(4, 4),
+            tracks: vec![],
+            lookahead: MusicTime::measures(1),
+            looped: false,
+            loop_time: MusicTime::measures(1),
+        };
+        scheduler.set_composition(music);
+        let player = Player::new();
+        thread::sleep(Duration::from_millis(1000)); // give player time to get ready
+        run(&mut scheduler, 50, player);
+    }
 }

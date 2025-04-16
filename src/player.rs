@@ -1,7 +1,8 @@
 use std::cmp::{max, min};
+use std::fmt::Debug;
 use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use rodio::{OutputStream, OutputStreamHandle, Source};
 use crate::time::Seconds;
 
@@ -47,10 +48,11 @@ impl Player {
                 thread::sleep(std::time::Duration::from_secs_f32(wait_time));
             }
             end = SystemTime::max(end, current_time + std::time::Duration::from_secs_f32(f32::max(wait_time, 0.) + duration));
+            println!("playing sound: {start:?}");
             self.play(source);
         }
         // wait for the last sound to finish
-        let wait_time = end.duration_since(SystemTime::now()).unwrap().as_secs_f32();
+        let wait_time = end.duration_since(SystemTime::now()).unwrap_or(Duration::from_secs(1)).as_secs_f32();
         if wait_time > 0. {
             std::thread::sleep(std::time::Duration::from_secs_f32(wait_time));
         }

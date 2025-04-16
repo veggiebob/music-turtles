@@ -1,4 +1,6 @@
 use std::ops::Add;
+use std::collections::HashMap;
+use crate::player::Player;
 use crate::time::{Beat, MusicTime, TimeSignature};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd)]
@@ -92,6 +94,13 @@ impl Track {
         es.sort();
         es
     }
+
+    pub fn shift_by(&mut self, offset: MusicTime, time_signature: TimeSignature) {
+        self.events.iter_mut()
+            .for_each(|e|
+                e.start = e.start.with(time_signature) + offset
+            );
+    }
 }
 
 impl Add<Self> for Track {
@@ -124,3 +133,50 @@ impl Pitch {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Composition {
+    pub tracks: Vec<Track>,
+    pub time_signature: TimeSignature
+}
+
+impl Composition {
+    pub fn get_duration(&self) -> MusicTime {
+        let start = self.tracks.iter().filter_map(|t| t.get_start())
+            .min();
+        let end = self.tracks.iter().filter_map(|t| t.get_end(self.time_signature))
+            .max();
+        match (start, end) {
+            (Some(start), Some(end)) => end.with(self.time_signature) - start,
+            _ => MusicTime::zero()
+        }
+    }
+
+    pub fn shift_by(&mut self, offset: MusicTime) {
+        self.tracks.iter_mut()
+            .for_each(|tr| tr.shift_by(offset, self.time_signature));
+    }
+}
+
+impl Add<Self> for Composition {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        if self.time_signature != rhs.time_signature {
+            panic!("differing time signatures!!");
+        }
+        let mut map = HashMap::new();
+        for track in self.tracks {
+            let id = track.identifier;
+            if let Some(mtrack) = map.remove(&id) {
+                let new_track = mtrack + track;
+                map.insert(id, new_track);
+            } else {
+                map.insert(id, track);
+            }
+        }
+        Composition {
+            tracks: map.into_values().collect(),
+            time_signature: self.time_signature,
+        }
+    }
+}

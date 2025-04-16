@@ -1,29 +1,13 @@
 use std::collections::HashMap;
-use std::ops::Add;
-use crate::composition::{Event, Instrument, Pitch, Track, TrackId, Volume};
+use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
 use crate::time::{MusicTime, TimeSignature};
 
-pub enum NonTerminal {
-    Custom(String)
+/// Grammars that generate MusicStrings
+pub struct GrammarProduction {
+    // todo: all the productions codified so that they can be undone
 }
 
-pub enum Symbol {
-    NT(NonTerminal),
-    T(Terminal)
-}
-
-pub struct Terminal {
-    duration: MusicTime,
-    note: TerminalNote
-}
-
-pub enum TerminalNote {
-    Note {
-        instrument: Instrument,
-        pitch: Pitch
-    },
-    Rest
-}
+pub struct MusicString(pub Vec<MusicPrimitive>);
 
 pub enum MusicPrimitive {
     Simple(Symbol),
@@ -31,10 +15,31 @@ pub enum MusicPrimitive {
     Repeat(usize, MusicString)
 }
 
-pub struct MusicString(Vec<MusicPrimitive>);
+pub enum Symbol {
+    NT(NonTerminal),
+    T(Terminal)
+}
 
-pub struct GrammarProduction {
-    // todo: all the productions codified so that they can be undone
+pub enum NonTerminal {
+    Custom(String)
+}
+
+pub enum Terminal {
+    Music {
+        duration: MusicTime,
+        note: TerminalNote
+    },
+    Meta(MetaControl)
+}
+
+pub enum MetaControl {
+    ChangeInstrument(Instrument),
+    ChangeVolume(Volume)
+}
+
+pub enum TerminalNote {
+    Note(Pitch),
+    Rest
 }
 
 pub struct Grammar {
@@ -42,46 +47,6 @@ pub struct Grammar {
     productions: Vec<(Symbol, MusicString)>
 }
 
-pub struct Composition {
-    tracks: Vec<Track>,
-    time_signature: TimeSignature
-}
-
-impl Composition {
-    pub fn get_duration(&self) -> MusicTime {
-        let start = self.tracks.iter().filter_map(|t| t.get_start())
-            .min();
-        let end = self.tracks.iter().filter_map(|t| t.get_end(self.time_signature))
-            .max();
-        match (start, end) {
-            (Some(start), Some(end)) => end.with(self.time_signature) - start,
-            _ => MusicTime::zero()
-        }
-    }
-}
-impl Add<Self> for Composition {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        if self.time_signature != rhs.time_signature {
-            panic!("differing time signatures!!");
-        }
-        let mut map = HashMap::new();
-        for track in self.tracks {
-            let id = track.identifier;
-            if let Some(mtrack) = map.remove(&id) {
-                let new_track = mtrack + track;
-                map.insert(id, new_track);
-            } else {
-                map.insert(id, track);
-            }
-        }
-        Composition {
-            tracks: map.into_values().collect(),
-            time_signature: self.time_signature,
-        }
-    }
-}
 impl MusicString {
     pub fn compose(&self, time_signature: TimeSignature) -> Composition {
         let mut tracks = HashMap::new();
@@ -109,6 +74,8 @@ impl MusicString {
             }
         }
         let mut current_mt = MusicTime::zero();
+        let mut current_instrument = Instrument::SineWave;
+        let mut current_volume = Volume(50);
         for mp in self.0.iter() {
             let duration = match mp {
                 MusicPrimitive::Simple(sym) => {
@@ -116,21 +83,32 @@ impl MusicString {
                         Symbol::NT(_) => {
                             MusicTime::zero()
                         }
-                        Symbol::T(Terminal {note, duration}) => {
+                        Symbol::T(Terminal::Music {note, duration}) => {
                             match note {
-                                TerminalNote::Note { pitch, instrument } => {
+                                TerminalNote::Note(pitch) => {
                                     add_event(&mut tracks, Event {
                                         start: current_mt,
                                         duration: duration.with(time_signature).total_beats(),
-                                        volume: Volume(50), // idk
+                                        volume: current_volume,
                                         pitch: *pitch,
-                                    }, *instrument);
+                                    }, current_instrument);
                                     *duration
                                 }
                                 TerminalNote::Rest => {
                                     *duration
                                 }
                             }
+                        }
+                        Symbol::T(Terminal::Meta(control)) => {
+                            match control {
+                                MetaControl::ChangeInstrument(i) => {
+                                    current_instrument = *i;
+                                }
+                                MetaControl::ChangeVolume(v) => {
+                                    current_volume = *v;
+                                }
+                            }
+                            MusicTime::zero()
                         }
                     }
                 }
@@ -162,8 +140,13 @@ impl MusicString {
                 MusicPrimitive::Repeat(n, ms) => {
                     let composed = ms.compose(time_signature);
                     let duration = composed.get_duration();
-                    // todo: repeat the actual tracks
-                    add_composition(&mut tracks, composed);
+                    let mut offset = MusicTime::zero();
+                    for _i in 0..*n {
+                        let mut comp_i = composed.clone();
+                        comp_i.shift_by(offset);
+                        add_composition(&mut tracks, comp_i);
+                        offset = offset.with(time_signature) + duration;
+                    }
                     let mut total_duration = MusicTime::zero();
                     for _i in 0..*n {
                         total_duration = total_duration.with(time_signature) + duration;

@@ -34,6 +34,10 @@ impl Beat {
         Beat(Ratio::new(num, denom))
     }
 
+    pub fn whole(num: BeatUnit) -> Self {
+        Beat(Ratio::new(num, 1))
+    }
+
     pub fn as_float(&self) -> f32 {
         self.0.to_f32().unwrap_or_else(|| {
             println!("WARNING: Beat {self:?} could not be converted to f32. Defaulting to 0.");
@@ -75,6 +79,14 @@ impl MusicTime {
 
     pub fn zero() -> Self {
         MusicTime(0, Beat::zero())
+    }
+
+    pub fn beats(beats: BeatUnit) -> Self {
+        MusicTime(0, Beat::whole(beats))
+    }
+
+    pub fn measures(measures: Measure) -> Self {
+        MusicTime(measures, Beat::zero())
     }
 }
 
@@ -126,6 +138,12 @@ impl Sub<MusicTime> for MusicTimeWithSignature {
 impl MusicTimeWithSignature {
     pub fn total_beats(&self) -> Beat {
         Beat::new(self.time.0 * self.time_signature.0 as BeatUnit, 1) + self.time.1
+    }
+}
+
+impl TimeSignature {
+    pub fn common() -> Self {
+        TimeSignature(4, 4)
     }
 }
 
