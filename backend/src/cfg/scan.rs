@@ -93,26 +93,54 @@ impl Scanner for GrammarScanner {
     type Output = Grammar;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        concat(
-            scan_map(
-                concat(
-                    StringScanner("start".to_string()),
-                    scan_map(concat(SpaceScanner, NonTerminalScanner), |(_s, nt)| nt),
-                ),
-                |(_s, nt)| nt,
-            ),
-            kleene(ProductionScanner),
-        )
-        .scan(input)
-        .map(|((s, prod), left)| {
-            (
-                Grammar {
-                    start: NonTerminal::Custom(s),
-                    productions: prod,
-                },
-                left,
-            )
-        })
+        // concat(
+        //     scan_map(
+        //         concat(
+        //             StringScanner("start".to_string()),
+        //             scan_map(concat(SpaceScanner, NonTerminalScanner), |(_s, nt)| nt),
+        //         ),
+        //         |(_s, nt)| nt,
+        //     ),
+        //     kleene(ProductionScanner),
+        // )
+        // .scan(input)
+        // .map(|((s, prod), left)| {
+        //     (
+        //         Grammar {
+        //             start: NonTerminal::Custom(s),
+        //             productions: prod,
+        //         },
+        //         left,
+        //     )
+        // })
+        let lines = input.lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        if lines.is_empty() {
+            return Err(ScanError::Generic("Expected at least one line".to_string()));
+        }
+        let start_line = lines[0];
+        let start = start_line
+            .strip_prefix("start ")
+            .ok_or_else(|| ScanError::Generic("Expected 'start' at the beginning of the first line".to_string()))?;
+        let start = NonTerminalScanner.scan(start)
+            .map(|(nt, _s)| NonTerminal::Custom(nt))?;
+        let productions = lines[1..]
+            .iter()
+            .map(|line| {
+                let line = line.trim();
+                if line.is_empty() {
+                    return Ok(None);
+                }
+                let (prod, _s) = ProductionScanner.scan(line)?;
+                Ok(Some(prod))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|x| x)
+            .collect();
+        Ok((Grammar { start, productions }, ""))
     }
 }
 
@@ -126,7 +154,7 @@ impl Scanner for ProductionScanner {
             ),
             MusicStringScanner,
         ), |(nt, str)| Production(nt, str))
-        .scan(input)
+            .scan(input)
     }
 }
 
@@ -175,7 +203,7 @@ impl Scanner for MusicPrimitiveScanner {
                 scan_map(SymbolScanner, |s| MusicPrimitive::Simple(s)),
             ),
         )
-        .scan(input)
+            .scan(input)
     }
 }
 
@@ -202,7 +230,7 @@ impl Scanner for MusicPrimitiveSplitScanner {
                         Ok(vec)
                     })?;
                 let rest = &rest[end + 1..];
-                Ok((MusicPrimitive::Split(rest_music_strings), rest))
+                Ok((MusicPrimitive::Split { branches: rest_music_strings }, rest))
             } else {
                 Err(ScanError::Generic("Expected '}'".to_string()))
             }
@@ -229,7 +257,10 @@ impl Scanner for MusicPrimitiveRepeatScanner {
                         let music_string = scanner.scan(music_string).map(|(ms, _empty)| ms)?;
                         let rest = &rest[end_bracket + 1..];
                         Ok((
-                            MusicPrimitive::Repeat(repeat_num.parse().unwrap(), music_string),
+                            MusicPrimitive::Repeat {
+                                num: repeat_num.parse().unwrap(),
+                                content: music_string,
+                            },
                             rest,
                         ))
                     } else {
@@ -261,7 +292,7 @@ impl Scanner for SymbolScanner {
             None,
             scan_map(NonTerminalScanner, |s| Symbol::NT(NonTerminal::Custom(s))),
         )
-        .scan(input)
+            .scan(input)
     }
 }
 
@@ -282,7 +313,7 @@ impl Scanner for TerminalScanner {
                 }
             }),
         )
-        .scan(input)
+            .scan(input)
     }
 }
 
@@ -332,7 +363,7 @@ impl Scanner for NoteScanner {
                             consumed += 1;
                         }
                     }
-                    Ok((TerminalNote::Note(Pitch(octave, note)), &input[consumed..]))
+                    Ok((TerminalNote::Note { pitch: Pitch(octave, note) }, &input[consumed..]))
                 } else {
                     Err(ScanError::Generic(
                         format!("Expected Note: note name {next} is not a valid note."),
@@ -384,12 +415,12 @@ impl Scanner for MetaControlScanner {
                         let (instrument, new_input) = InstrumentScanner.scan(rest)?;
                         rest = new_input;
                         Ok((MetaControl::ChangeInstrument(instrument), rest))
-                    },
+                    }
                     'v' => {
                         let (volume, new_input) = VolumeScanner.scan(rest)?;
                         rest = new_input;
                         Ok((MetaControl::ChangeVolume(volume), rest))
-                    },
+                    }
                     _ => {
                         Err(ScanError::Generic(format!(
                             "Expected MetaControl: i= or v=, found {}=",
@@ -549,21 +580,21 @@ pub struct MapInputScanner<S, F> {
     mapper: F,
 }
 
-pub fn trim<S>(scan: S) -> impl Scanner<Output = S::Output>
+pub fn trim<S>(scan: S) -> impl Scanner<Output=S::Output>
 where
     S: Scanner,
 {
     scan_map_input(scan, |s| s.trim_start().trim_end())
 }
 
-pub fn consume<S>(scan: S) -> impl Scanner<Output = S::Output>
+pub fn consume<S>(scan: S) -> impl Scanner<Output=S::Output>
 where
     S: Scanner,
 {
     ConsumeScanner(scan)
 }
 
-pub fn scan_map<S, F, T>(scan: S, map: F) -> impl Scanner<Output = T>
+pub fn scan_map<S, F, T>(scan: S, map: F) -> impl Scanner<Output=T>
 where
     S: Scanner,
     F: Fn(S::Output) -> T,
@@ -574,7 +605,7 @@ where
     }
 }
 
-pub fn scan_map_input<S, F>(scan: S, map: F) -> impl Scanner<Output = S::Output>
+pub fn scan_map_input<S, F>(scan: S, map: F) -> impl Scanner<Output=S::Output>
 where
     S: Scanner,
     F: Fn(&str) -> &str,
@@ -585,17 +616,17 @@ where
     }
 }
 
-pub fn kleene<S>(scan: S) -> impl Scanner<Output = Vec<S::Output>>
+pub fn kleene<S>(scan: S) -> impl Scanner<Output=Vec<S::Output>>
 where
     S: Scanner,
 {
     KleeneScan(scan)
 }
 
-pub fn concat<S, T, U, V>(scan1: S, scan2: T) -> impl Scanner<Output = (U, V)>
+pub fn concat<S, T, U, V>(scan1: S, scan2: T) -> impl Scanner<Output=(U, V)>
 where
-    S: Scanner<Output = U>,
-    T: Scanner<Output = V>,
+    S: Scanner<Output=U>,
+    T: Scanner<Output=V>,
 {
     ConcatScan(scan1, scan2)
 }
@@ -605,10 +636,10 @@ pub fn disjoint<S, T, U>(
     scan1: S,
     prefix2: Option<ScanPrefix>,
     scan2: T,
-) -> impl Scanner<Output = U>
+) -> impl Scanner<Output=U>
 where
-    S: Scanner<Output = U>,
-    T: Scanner<Output = U>,
+    S: Scanner<Output=U>,
+    T: Scanner<Output=U>,
 {
     DisjointScan {
         scanner_a: (prefix1, scan1),
@@ -618,8 +649,8 @@ where
 
 impl<S, T, U, V> Scanner for ConcatScan<S, T>
 where
-    S: Scanner<Output = U>,
-    T: Scanner<Output = V>,
+    S: Scanner<Output=U>,
+    T: Scanner<Output=V>,
 {
     type Output = (U, V);
 
@@ -632,8 +663,8 @@ where
 
 impl<S, T, U> Scanner for DisjointScan<S, T>
 where
-    S: Scanner<Output = U>,
-    T: Scanner<Output = U>,
+    S: Scanner<Output=U>,
+    T: Scanner<Output=U>,
 {
     type Output = U;
 
@@ -726,12 +757,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cfg::scan::{ConsumeScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
+    use crate::cfg::scan::{consume, ConsumeScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
 
     #[test]
     fn test_1() {
         let input = "start S\nS = [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]\nB = :0c";
-        let scanner = GrammarScanner;
+        let scanner = consume(GrammarScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
         assert!(result.is_ok());

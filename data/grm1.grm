@@ -1,0 +1,7 @@
+start S
+
+S = [2][:a :b :c# :d :e :f# :g#]
+
+S = :a :g :c
+
+B = { :c :g :c | :d :f# :d }

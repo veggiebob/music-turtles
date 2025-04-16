@@ -1,5 +1,5 @@
 pub mod scan;
-mod interactive;
+pub mod interactive;
 
 use crate::cfg::scan::Scanner;
 use crate::cfg::scan::{consume, MusicStringScanner, ScanError};
@@ -22,13 +22,20 @@ pub struct Production(NonTerminal, MusicString);
 pub struct MusicString(pub Vec<MusicPrimitive>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum MusicPrimitive {
     Simple(Symbol),
-    Split(Vec<MusicString>),
-    Repeat(usize, MusicString),
+    Split {
+        branches: Vec<MusicString>
+    },
+    Repeat {
+        num: usize,
+        content: MusicString,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Symbol {
     NT(NonTerminal),
     T(Terminal),
@@ -40,6 +47,7 @@ pub enum NonTerminal {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Terminal {
     Music {
         duration: MusicTime,
@@ -49,12 +57,16 @@ pub enum Terminal {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum TerminalNote {
-    Note(Pitch),
+    Note {
+        pitch: Pitch
+    },
     Rest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum MetaControl {
     ChangeInstrument(Instrument),
     ChangeVolume(Volume),
@@ -97,7 +109,7 @@ impl MusicString {
                 MusicPrimitive::Simple(sym) => match sym {
                     Symbol::NT(_) => MusicTime::zero(),
                     Symbol::T(Terminal::Music { note, duration }) => match note {
-                        TerminalNote::Note(pitch) => {
+                        TerminalNote::Note { pitch } => {
                             add_event(
                                 &mut tracks,
                                 Event {
@@ -124,8 +136,8 @@ impl MusicString {
                         MusicTime::zero()
                     }
                 },
-                MusicPrimitive::Split(mss) => {
-                    let comps: Vec<_> = mss
+                MusicPrimitive::Split { branches } => {
+                    let comps: Vec<_> = branches
                         .into_iter()
                         .map(|ms| ms.compose(time_signature))
                         .map(|mut c| {
@@ -152,22 +164,22 @@ impl MusicString {
                         dur
                     } else {
                         panic!("Not all split tracks have the same duration: {:?}",
-                            comps.iter().map(|(d, c)| d).collect::<Vec<_>>()
+                               comps.iter().map(|(d, c)| d).collect::<Vec<_>>()
                         )
                     }
                 }
-                MusicPrimitive::Repeat(n, ms) => {
-                    let composed = ms.compose(time_signature);
+                MusicPrimitive::Repeat { content, num } => {
+                    let composed = content.compose(time_signature);
                     let duration = composed.get_duration();
                     let mut offset = MusicTime::zero();
-                    for _i in 0..*n {
+                    for _i in 0..*num {
                         let mut comp_i = composed.clone();
                         comp_i.shift_by(offset);
                         add_composition(&mut tracks, comp_i);
                         offset = offset.with(time_signature) + duration;
                     }
                     let mut total_duration = MusicTime::zero();
-                    for _i in 0..*n {
+                    for _i in 0..*num {
                         total_duration = total_duration.with(time_signature) + duration;
                     }
                     total_duration

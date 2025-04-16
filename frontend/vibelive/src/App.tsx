@@ -1,33 +1,39 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
+import { Grammar, MusicString } from './protocol';
+
+function getProductions(grammar: Grammar, name: string): MusicString[] {
+  const productions = grammar.productions.filter((p) => {
+    if (p[0].Custom === name) {
+      return true;
+    }
+    return false;
+  }).map((p) => p[1]);
+  return productions;
+}
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [grammar, setGrammar] = useState(null);
 
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/grammar/grm1.grm');
+        const json = await res.json();
+        console.log(json);
+        setGrammar(json.message); // assuming your JSON has a `message` field
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      }
+    };
+
+    fetchData();
+  }, []); // ← empty array = run once when mounted
   return (
     <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
+      
     </>
   )
 }
