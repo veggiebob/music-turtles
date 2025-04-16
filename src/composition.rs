@@ -1,6 +1,6 @@
 use std::ops::Add;
 use std::collections::HashMap;
-use crate::player::Player;
+use std::str::FromStr;
 use crate::time::{Beat, MusicTime, TimeSignature};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd)]
@@ -177,6 +177,17 @@ impl Add<Self> for Composition {
         Composition {
             tracks: map.into_values().collect(),
             time_signature: self.time_signature,
+        }
+    }
+}
+
+impl FromStr for Instrument {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "sine" => Ok(Instrument::SineWave),
+            _ => Err(format!("Unknown instrument: {}", s))
         }
     }
 }

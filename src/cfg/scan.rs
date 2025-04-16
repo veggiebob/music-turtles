@@ -42,8 +42,15 @@ B = :0c
 ```
 
 */
-use crate::cfg::{Grammar, MusicPrimitive, MusicString, NonTerminal, Symbol};
 
+use crate::cfg::{
+    Grammar, MetaControl, MusicPrimitive, MusicString, NonTerminal, Symbol, Terminal, TerminalNote,
+};
+use crate::composition::{Instrument, Octave, Pitch, Volume};
+use crate::time::MusicTime;
+
+
+#[derive(Debug)]
 pub enum ScanError {
     Generic(String),
     ExpectedEither(String, String),
@@ -65,6 +72,8 @@ pub struct ProductionScanner;
 pub struct MusicStringScanner;
 
 pub struct MusicPrimitiveScanner;
+pub struct MusicPrimitiveSplitScanner;
+pub struct MusicPrimitiveRepeatScanner;
 
 pub struct SymbolScanner;
 
@@ -72,7 +81,9 @@ pub struct NonTerminalScanner;
 
 pub struct TerminalScanner;
 
-pub struct TerminalNoteScanner;
+pub struct NoteScanner;
+
+pub struct DurationScanner;
 
 pub struct MetaControlScanner;
 
@@ -85,19 +96,25 @@ impl Scanner for GrammarScanner {
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
         concat(
-            scan_map(concat(
-                StringScanner("start".to_string()),
-                scan_map(concat(
-                    SpaceScanner,
-                    NonTerminalScanner,
-                ), |(_s, nt)| nt)
-            ), |(_s, nt)| nt),
-            kleene(ProductionScanner)
-        ).scan(input)
-            .map(|((s, prod), left)| (Grammar {
-                start: NonTerminal::Custom(s),
-                productions: prod,
-            }, left))
+            scan_map(
+                concat(
+                    StringScanner("start".to_string()),
+                    scan_map(concat(SpaceScanner, NonTerminalScanner), |(_s, nt)| nt),
+                ),
+                |(_s, nt)| nt,
+            ),
+            kleene(ProductionScanner),
+        )
+        .scan(input)
+        .map(|((s, prod), left)| {
+            (
+                Grammar {
+                    start: NonTerminal::Custom(s),
+                    productions: prod,
+                },
+                left,
+            )
+        })
     }
 }
 
@@ -105,13 +122,13 @@ impl Scanner for ProductionScanner {
     type Output = (NonTerminal, MusicString);
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
         concat(
-            scan_map(concat(
-                NonTerminalScanner,
-                StringScanner("=".to_string()),
-            ), |(nt, _s)| NonTerminal::Custom(nt)),
-            MusicStringScanner
-        ).scan(input)
-            .map(|((nt, music_string), left)| ((nt, music_string), left))
+            scan_map(
+                concat(NonTerminalScanner, trim(StringScanner("=".to_string()))),
+                |(nt, _s)| NonTerminal::Custom(nt),
+            ),
+            MusicStringScanner,
+        )
+        .scan(input)
     }
 }
 
@@ -123,11 +140,17 @@ impl Scanner for MusicStringScanner {
         let mut remaining_input = input;
 
         while !remaining_input.is_empty() {
-            if let Ok((primitive, new_input)) = MusicPrimitiveScanner.scan(remaining_input) {
-                music_string.push(primitive);
-                remaining_input = new_input;
-            } else {
-                break;
+            // skip to the first non-whitespace character
+            remaining_input = remaining_input.trim_start();
+            match MusicPrimitiveScanner.scan(remaining_input) {
+                Ok((primitive, new_input)) => {
+                    music_string.push(primitive);
+                    remaining_input = new_input;
+                }
+                Err(e) => {
+                    println!("Error scanning MusicString: {:?}. Remaining input: {remaining_input}", e);
+                    break;
+                }
             }
         }
 
@@ -137,97 +160,248 @@ impl Scanner for MusicStringScanner {
 
 impl Scanner for MusicPrimitiveScanner {
     type Output = MusicPrimitive;
-    
+
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        todo!()
+        // split scanner, or else repeat scanner, or else SymbolScanner
+        disjoint(
+            ScanPrefix::from("{".to_string()),
+            MusicPrimitiveSplitScanner,
+            None,
+            disjoint(
+                ScanPrefix::from("[".to_string()),
+                MusicPrimitiveRepeatScanner,
+                None,
+                scan_map(SymbolScanner, |s| MusicPrimitive::Simple(s)),
+            ),
+        )
+        .scan(input)
+    }
+}
+
+impl Scanner for MusicPrimitiveSplitScanner {
+    type Output = MusicPrimitive;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // if it starts with '{', then find the matching '}' and split on each '|'
+        if let Some('{') = input.chars().next() {
+            let rest = &input[1..];
+            if let Some(end) = find_matching(rest, '{', '}') {
+                let inner = &rest[..end];
+                let mut parts = inner.split('|');
+                let first_part = parts.next().unwrap_or("");
+                let rest_parts: Vec<_> = parts.collect();
+                let scanner = consume(MusicStringScanner);
+                let (music_string, _consumed) = scanner.scan(first_part)?;
+                let rest_music_strings: Vec<_> = rest_parts
+                    .iter()
+                    .map(|&s| MusicStringScanner.scan(s))
+                    .try_fold(vec![music_string], |mut vec, res| {
+                        let (music_string, _consumed) = res?;
+                        vec.push(music_string);
+                        Ok(vec)
+                    })?;
+                let rest = &rest[end + 1..];
+                Ok((MusicPrimitive::Split(rest_music_strings), rest))
+            } else {
+                Err(ScanError::Generic("Expected '}'".to_string()))
+            }
+        } else {
+            Err(ScanError::Generic("Expected '{'".to_string()))
+        }
+    }
+}
+
+impl Scanner for MusicPrimitiveRepeatScanner {
+    type Output = MusicPrimitive;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // first scan '[' a positive integer, '][', then a MusicString, and finally ']'
+        if let Some('[') = input.chars().next() {
+            if let Some(repeat_num_end) = input.find(']') {
+                let repeat_num = &input[1..repeat_num_end];
+                if let Some('[') = &input[repeat_num_end + 1..].chars().next() {
+                    let rest = &input[repeat_num_end + 2..];
+                    if let Some(end_bracket) = find_matching(rest, '[', ']')
+                    {
+                        let music_string = &rest[..end_bracket];
+                        let scanner = consume(MusicStringScanner);
+                        let music_string = scanner.scan(music_string).map(|(ms, _empty)| ms)?;
+                        let rest = &rest[end_bracket + 1..];
+                        Ok((
+                            MusicPrimitive::Repeat(repeat_num.parse().unwrap(), music_string),
+                            rest,
+                        ))
+                    } else {
+                        Err(ScanError::Generic("Expected ']'".to_string()))
+                    }
+                } else {
+                    Err(ScanError::Generic("Expected '['".to_string()))
+                }
+            } else {
+                Err(ScanError::Generic("Expected ']'".to_string()))
+            }
+        } else {
+            Err(ScanError::Generic("Expected '['".to_string()))
+        }
     }
 }
 
 impl Scanner for SymbolScanner {
-    type Output = NonTerminal;
+    type Output = Symbol;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        let mut chars = input.chars();
-        if let Some(first) = chars.next() {
-            if first.is_alphabetic() {
-                let mut nt = first.to_string();
-                while let Some(c) = chars.next() {
-                    if c.is_alphanumeric() || c == '_' {
-                        nt.push(c);
-                    } else {
-                        return Ok((NonTerminal::Custom(nt), chars.as_str()));
-                    }
-                }
-                return Ok((NonTerminal::Custom(nt), chars.as_str()));
-            }
-        }
-        Err(ScanError::Generic("Expected NonTerminal".to_string()))
+        // if it starts with ':', use TerminalScanner
+        // otherwise, use NonTerminalScanner
+        disjoint(
+            ScanPrefix::from(":".to_string()),
+            scan_map(scan_map_input(TerminalScanner, |s| &s[1..]), |s| {
+                Symbol::T(s)
+            }),
+            None,
+            scan_map(NonTerminalScanner, |s| Symbol::NT(NonTerminal::Custom(s))),
+        )
+        .scan(input)
     }
 }
 
 impl Scanner for TerminalScanner {
-    type Output = String;
+    type Output = Terminal;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        let mut chars = input.chars();
-        if let Some(first) = chars.next() {
-            if first == ':' {
-                let mut terminal = first.to_string();
-                while let Some(c) = chars.next() {
-                    if c.is_alphanumeric() || c == '_' {
-                        terminal.push(c);
-                    } else {
-                        return Ok((terminal, chars.as_str()));
-                    }
+        // if it starts with ':', then use MetaControlScanner
+        // otherwise, use TerminalNoteScanner
+        disjoint(
+            ScanPrefix::from(":".to_string()),
+            scan_map_input(scan_map(MetaControlScanner, |s| Terminal::Meta(s)), |s| &s[1..]),
+            None,
+            scan_map(concat(NoteScanner, DurationScanner), |(note, duration)| {
+                Terminal::Music {
+                    note: note,
+                    duration: duration,
                 }
-                return Ok((terminal, chars.as_str()));
-            }
-        }
-        Err(ScanError::Generic("Expected Terminal".to_string()))
+            }),
+        )
+        .scan(input)
     }
 }
 
-impl Scanner for TerminalNoteScanner {
-    type Output = String;
+impl Scanner for NoteScanner {
+    type Output = TerminalNote;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        /*
+        Note :=
+          | `_`
+          | Int?[a-gA-G](b|#)?
+        */
         let mut chars = input.chars();
+        let mut rest = input;
+        let mut octave = 4;
+        let mut note = 0;
+        let mut consumed = 0;
         if let Some(first) = chars.next() {
-            if first == '_' || first.is_alphabetic() {
-                let mut note = first.to_string();
-                while let Some(c) = chars.next() {
-                    if c.is_alphanumeric() || c == '#' || c == 'b' {
-                        note.push(c);
-                    } else {
-                        return Ok((note, chars.as_str()));
+            consumed += 1;
+            let next = if first == '_' {
+                return Ok((TerminalNote::Rest, chars.as_str()));
+            } else if let Some(dig) = first.to_digit(10) {
+                octave = dig as Octave;
+                consumed += 1;
+                chars.next()
+            } else {
+                Some(first)
+            };
+            if let Some(next) = next {
+                if 'a' <= next.to_ascii_lowercase() && next.to_ascii_lowercase() <= 'g' {
+                    match next.to_ascii_lowercase() {
+                        'a' => note = 0,
+                        'b' => note = 2,
+                        'c' => note = 3,
+                        'd' => note = 5,
+                        'e' => note = 7,
+                        'f' => note = 8,
+                        'g' => note = 10,
+                        _ => unreachable!(),
                     }
+                    if let Some(next) = chars.next() {
+                        if next == '#' {
+                            note += 1;
+                            consumed += 1;
+                        } else if next == 'b' {
+                            note -= 1;
+                            consumed += 1;
+                        }
+                    }
+                    Ok((TerminalNote::Note(Pitch(octave, note)), &input[consumed..]))
+                } else {
+                    Err(ScanError::Generic(
+                        format!("Expected Note: note name {next} is not a valid note."),
+                    ))
                 }
-                return Ok((note, chars.as_str()));
+            } else {
+                Err(ScanError::Generic(
+                    format!("Expected letter [a-g] after octave number after {first}"),
+                ))
             }
+        } else {
+            Err(ScanError::Generic(
+                "Expected Note: octave number or note letter".to_string(),
+            ))
         }
-        Err(ScanError::Generic("Expected TerminalNote".to_string()))
+    }
+}
+
+impl Scanner for DurationScanner {
+    type Output = MusicTime;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // if it starts with '<', then scan a duration
+        if let Some('<') = input.chars().next() {
+            if let Some(end) = find_matching(&input[1..], '<', '>') {
+                let duration = &input[1..=end];
+                let duration_int = duration.parse::<u32>().unwrap_or(0);
+                let rest = &input[end + 2..];
+                Ok((MusicTime::beats(duration_int), rest))
+            } else {
+                Err(ScanError::Generic("Expected '>'".to_string()))
+            }
+        } else {
+            Ok((MusicTime::beats(1), input))
+        }
     }
 }
 
 impl Scanner for MetaControlScanner {
-    type Output = String;
+    type Output = MetaControl;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
         let mut chars = input.chars();
         if let Some(first) = chars.next() {
-            if first == 'i' || first == 'v' {
-                let mut meta_control = first.to_string();
-                while let Some(c) = chars.next() {
-                    if c.is_alphanumeric() || c == '=' {
-                        meta_control.push(c);
-                    } else {
-                        return Ok((meta_control, chars.as_str()));
+            if let Some('=') = chars.next() {
+                let mut rest = &input[2..];
+                match first {
+                    'i' => {
+                        let (instrument, new_input) = InstrumentScanner.scan(rest)?;
+                        rest = new_input;
+                        Ok((MetaControl::ChangeInstrument(instrument), rest))
+                    },
+                    'v' => {
+                        let (volume, new_input) = VolumeScanner.scan(rest)?;
+                        rest = new_input;
+                        Ok((MetaControl::ChangeVolume(volume), rest))
+                    },
+                    _ => {
+                        Err(ScanError::Generic(format!(
+                            "Expected MetaControl: i= or v=, found {}=",
+                            first
+                        )))
                     }
                 }
-                return Ok((meta_control, chars.as_str()));
+            } else {
+                Err(ScanError::Generic(format!("Expected '=' to follow meta control character {first}")))
             }
+        } else {
+            Err(ScanError::Generic("Expected MetaControl".to_string()))
         }
-        Err(ScanError::Generic("Expected MetaControl".to_string()))
     }
 }
 
@@ -235,22 +409,94 @@ impl Scanner for NonTerminalScanner {
     type Output = String;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // scan [-a-zA-Z] and return largest prefix
+        let mut chars = input.chars();
+        if let Some(first) = chars.next() {
+            if first.is_alphabetic() || first == '-' {
+                let mut non_terminal = first.to_string();
+                while let Some(c) = chars.next() {
+                    if c.is_alphanumeric() || c == '-' {
+                        non_terminal.push(c);
+                    } else {
+                        return Ok((non_terminal, chars.as_str()));
+                    }
+                }
+                Ok((non_terminal, chars.as_str()))
+            } else {
+                Err(ScanError::Generic(format!("Expected NonTerminal but got {first}")))
+            }
+        } else {
+            Err(ScanError::Generic(format!("Expected NonTerminal, but it's an empty string")))
+        }
+    }
+}
+
+impl Scanner for InstrumentScanner {
+    type Output = Instrument;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // scan instrument name
         let mut chars = input.chars();
         if let Some(first) = chars.next() {
             if first.is_alphabetic() {
-                let mut nt = first.to_string();
+                let mut instrument = first.to_string();
                 while let Some(c) = chars.next() {
                     if c.is_alphanumeric() || c == '_' {
-                        nt.push(c);
+                        instrument.push(c);
                     } else {
-                        return Ok((nt, chars.as_str()));
+                        return Ok((instrument.parse().unwrap(), chars.as_str()));
                     }
                 }
-                return Ok((nt, chars.as_str()));
+                Ok((instrument.parse().unwrap(), chars.as_str()))
+            } else {
+                Err(ScanError::Generic("Expected Instrument".to_string()))
+            }
+        } else {
+            Err(ScanError::Generic("Expected Instrument".to_string()))
+        }
+    }
+}
+
+impl Scanner for VolumeScanner {
+    type Output = Volume;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // scan volume value
+        let mut chars = input.chars();
+        if let Some(first) = chars.next() {
+            if first.is_digit(10) {
+                let mut volume = first.to_string();
+                while let Some(c) = chars.next() {
+                    if c.is_digit(10) {
+                        volume.push(c);
+                    } else {
+                        return Ok((Volume(volume.parse().unwrap()), chars.as_str()));
+                    }
+                }
+                Ok((Volume(volume.parse().unwrap()), chars.as_str()))
+            } else {
+                Err(ScanError::Generic("Expected Volume".to_string()))
+            }
+        } else {
+            Err(ScanError::Generic("Expected Volume".to_string()))
+        }
+    }
+}
+
+/// Assume that exactly 1 opening char has already been found. Find the next closing char.
+fn find_matching(input: &str, open: char, close: char) -> Option<usize> {
+    let mut stack = 1;
+    for (i, c) in input.chars().enumerate() {
+        if c == open {
+            stack += 1;
+        } else if c == close {
+            stack -= 1;
+            if stack == 0 {
+                return Some(i);
             }
         }
-        Err(ScanError::Generic("Expected NonTerminal".to_string()))
     }
+    None
 }
 
 pub struct StringScanner(String);
@@ -262,10 +508,7 @@ impl Scanner for StringScanner {
         if input.starts_with(&self.0) {
             Ok((self.0.clone(), &input[self.0.len()..]))
         } else {
-            Err(ScanError::Generic(format!(
-                "Expected string: {}",
-                self.0
-            )))
+            Err(ScanError::Generic(format!("Expected string: {}", self.0)))
         }
     }
 }
@@ -285,7 +528,6 @@ impl Scanner for SpaceScanner {
     }
 }
 
-
 pub struct ConcatScan<S, T>(S, T);
 pub struct DisjointScan<S, T> {
     scanner_a: (ScanPrefix, S),
@@ -299,12 +541,47 @@ pub struct MapScanner<S, F> {
     mapper: F,
 }
 
+pub struct ConsumeScanner<S>(S);
+
+pub struct MapInputScanner<S, F> {
+    scanner: S,
+    mapper: F,
+}
+
+pub fn trim<S>(scan: S) -> impl Scanner<Output = S::Output>
+where
+    S: Scanner,
+{
+    scan_map_input(scan, |s| s.trim_start().trim_end())
+}
+
+pub fn consume<S>(scan: S) -> impl Scanner<Output = S::Output>
+where
+    S: Scanner,
+{
+    ConsumeScanner(scan)
+}
+
 pub fn scan_map<S, F, T>(scan: S, map: F) -> impl Scanner<Output = T>
 where
     S: Scanner,
     F: Fn(S::Output) -> T,
 {
-    MapScanner { scanner: scan, mapper: map }
+    MapScanner {
+        scanner: scan,
+        mapper: map,
+    }
+}
+
+pub fn scan_map_input<S, F>(scan: S, map: F) -> impl Scanner<Output = S::Output>
+where
+    S: Scanner,
+    F: Fn(&str) -> &str,
+{
+    MapInputScanner {
+        scanner: scan,
+        mapper: map,
+    }
 }
 
 pub fn kleene<S>(scan: S) -> impl Scanner<Output = Vec<S::Output>>
@@ -381,8 +658,7 @@ where
     }
 }
 
-
-impl <S> Scanner for KleeneScan<S>
+impl<S> Scanner for KleeneScan<S>
 where
     S: Scanner,
 {
@@ -401,7 +677,7 @@ where
     }
 }
 
-impl <S, T, U> Scanner for MapScanner<S, T>
+impl<S, T, U> Scanner for MapScanner<S, T>
 where
     S: Scanner,
     T: Fn(S::Output) -> U,
@@ -409,8 +685,200 @@ where
     type Output = U;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        self.scanner.scan(input).map(|(output, new_input)| {
-            ((self.mapper)(output), new_input)
+        self.scanner
+            .scan(input)
+            .map(|(output, new_input)| ((self.mapper)(output), new_input))
+    }
+}
+
+impl<S> Scanner for ConsumeScanner<S>
+where
+    S: Scanner,
+{
+    type Output = S::Output;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        self.0.scan(input).and_then(|(output, new_input)| {
+            if new_input.is_empty() {
+                Ok((output, new_input))
+            } else {
+                Err(ScanError::Generic("Did not consume entire input".to_string()))
+            }
         })
+    }
+}
+
+impl<S, T> Scanner for MapInputScanner<S, T>
+where
+    S: Scanner,
+    T: Fn(&str) -> &str,
+{
+    type Output = S::Output;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        self.scanner
+            .scan((self.mapper)(input))
+            .map(|(output, new_input)| (output, new_input))
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use crate::cfg::scan::{ConsumeScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
+
+    #[test]
+    fn test_1() {
+        let input = "start S\nS = [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]\nB = :0c";
+        let scanner = GrammarScanner;
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_instrument() {
+        let input = "sine";
+        let scanner = ConsumeScanner(InstrumentScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_volume() {
+        let input = "20";
+        let scanner = ConsumeScanner(VolumeScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_note() {
+        let input = "4c#";
+        let scanner = ConsumeScanner(NoteScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_rest() {
+        let input = "_";
+        let scanner = ConsumeScanner(NoteScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_meta_control() {
+        let input = "i=sine";
+        let scanner = ConsumeScanner(MetaControlScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_meta_control_terminal() {
+        let input = ":i=sine";
+        let scanner = ConsumeScanner(TerminalScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_terminal() {
+        let input = "4c<1>";
+        let scanner = ConsumeScanner(TerminalScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_nonterminal() {
+        let input = "S-b";
+        let scanner = ConsumeScanner(NonTerminalScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn symbol_scanner_1() {
+        let input = ":bb";
+        let scanner = ConsumeScanner(SymbolScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn symbol_scanner_2() {
+        let input = "::i=sine";
+        let scanner = ConsumeScanner(SymbolScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn symbol_scanner_3() {
+        let input = "T";
+        let scanner = ConsumeScanner(SymbolScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn music_string_scanner_1() {
+        // without any repeats or splits so far
+        let input = ":4c<1> :4d :_ :f# :g :c ::i=sine B";
+        let scanner = ConsumeScanner(MusicStringScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn music_primitive_repeat_scanner() {
+        let input = "[3][:4c<1> :4d :_ :f# :g :c ::i=sine B]";
+        let scanner = ConsumeScanner(MusicPrimitiveRepeatScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn music_primitive_split_scanner() {
+        let input = "{:4c<1> :4d :_ :f# :g :c ::i=sine B | :4c<1> :4d :_ :f# :g :c ::i=sine B }";
+        let scanner = ConsumeScanner(MusicPrimitiveScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn music_string_scanner_2() {
+        // with splits and repeats
+        let input = "{:4c<1> :4d :_ :f# :g :c ::i=sine B | [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]}";
+        let scanner = ConsumeScanner(MusicStringScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn production_scanner_1() {
+        let input = "S = [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]";
+        let scanner = ConsumeScanner(ProductionScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
     }
 }

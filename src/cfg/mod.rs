@@ -4,28 +4,39 @@ use std::collections::HashMap;
 use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
 use crate::time::{MusicTime, TimeSignature};
 
+#[derive(Debug)]
 pub struct Grammar {
     start: NonTerminal,
     productions: Vec<(NonTerminal, MusicString)>
 }
 
+
+#[derive(Debug)]
 pub struct MusicString(pub Vec<MusicPrimitive>);
 
+
+#[derive(Debug)]
 pub enum MusicPrimitive {
     Simple(Symbol),
     Split(Vec<MusicString>),
     Repeat(usize, MusicString)
 }
 
+
+#[derive(Debug)]
 pub enum Symbol {
     NT(NonTerminal),
     T(Terminal)
 }
 
+
+#[derive(Debug)]
 pub enum NonTerminal {
     Custom(String)
 }
 
+
+#[derive(Debug)]
 pub enum Terminal {
     Music {
         duration: MusicTime,
@@ -34,11 +45,15 @@ pub enum Terminal {
     Meta(MetaControl)
 }
 
+
+#[derive(Debug)]
 pub enum TerminalNote {
     Note(Pitch),
     Rest
 }
 
+
+#[derive(Debug)]
 pub enum MetaControl {
     ChangeInstrument(Instrument),
     ChangeVolume(Volume)
