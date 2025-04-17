@@ -390,9 +390,23 @@ impl Scanner for DurationScanner {
         if let Some('<') = input.chars().next() {
             if let Some(end) = find_matching(&input[1..], '<', '>') {
                 let duration = &input[1..=end];
-                let duration_int = duration.parse::<u32>().unwrap_or(0);
                 let rest = &input[end + 2..];
-                Ok((MusicTime::beats(duration_int), rest))
+                if duration.contains('/') {
+                    // it's a ratio
+                    let mut parts = duration.split('/');
+                    match (parts.next().and_then(|s| s.parse().ok()), parts.next().and_then(|s| s.parse().ok())) {
+                        (Some(num), Some(denom)) => {
+                            Ok((MusicTime(0, Beat::new(num, denom)), rest))
+                        }
+                        _ => {
+                            eprintln!("Unable to parse {duration} as duration. Defaulting to 1");
+                            Ok((MusicTime::beats(1), rest))
+                        }
+                    }
+                } else {
+                    let duration_int = duration.parse::<u32>().unwrap_or(0);
+                    Ok((MusicTime::beats(duration_int), rest))
+                }
             } else {
                 Err(ScanError::Generic("Expected '>'".to_string()))
             }
@@ -757,7 +771,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cfg::scan::{consume, ConsumeScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
+    use crate::cfg::scan::{consume, ConsumeScanner, DurationScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
 
     #[test]
     fn test_1() {
@@ -772,6 +786,15 @@ mod test {
     fn test_instrument() {
         let input = "sine";
         let scanner = ConsumeScanner(InstrumentScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_duration() {
+        let input = "<1/4>";
+        let scanner = ConsumeScanner(DurationScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
         assert!(result.is_ok());
@@ -868,6 +891,16 @@ mod test {
     }
 
     #[test]
+    fn music_string_scanner_0() {
+        // without any repeats or splits so far
+        let input = ":4c<1> :4d :_ :f# :g :c ::i=sine Ba-c";
+        let scanner = ConsumeScanner(MusicStringScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn music_string_scanner_1() {
         // without any repeats or splits so far
         let input = ":4c<1> :4d :_ :f# :g :c ::i=sine B";
@@ -913,4 +946,6 @@ mod test {
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
+
+
 }

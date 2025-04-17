@@ -1,7 +1,11 @@
 start S
 
-S = [2][:a :b :c# :d :e :f# :g#]
+S = A B C
 
-S = :a :g :c
+A = I  I  I  I
+B = IV IV I  I
+C = V  IV I  V
 
-B = { :c :g :c | :d :f# :d }
+I = :3c<1/2> :3g<1/2> :3e<1/2> :3g<1/2>
+IV = :3c<1/2> :4a<1/2> :3f<1/2> :4a<1/2>
+V = :3b<1/2> :3g<1/2> :3d<1/2> :3g<1/2>

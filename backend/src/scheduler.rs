@@ -1,8 +1,8 @@
 use std::time::Duration;
 use rodio::Source;
 use rodio::source::SineWave;
-use crate::composition::{Composition, Frequency, Instrument, Track, Volume};
-use crate::player::Playable;
+use crate::composition::{Composition, Frequency, Instrument, Pitch, Track, Volume};
+use crate::player::{AtomicSound, Playable};
 use crate::time::{MusicTime, Seconds, TimeSignature, BPM};
 
 pub type Cursor = MusicTime;
@@ -22,7 +22,7 @@ pub struct ScheduledSound {
     duration: Seconds,
     volume: Volume,
     instrument: Instrument,
-    pitch: Frequency
+    pitch: Pitch
 }
 
 pub fn get_sine_source(length: Seconds, frequency: Frequency) -> impl Source<Item=f32> {
@@ -44,12 +44,24 @@ pub fn get_sine_source(length: Seconds, frequency: Frequency) -> impl Source<Ite
 impl Playable for ScheduledSound {
     /// start time, duration, and actual sound
     fn get_source(&self) -> (Seconds, Seconds, Box<dyn Source<Item=f32> + Send + 'static>) {
-        let source = get_sine_source(self.duration, self.pitch);
+        let source = get_sine_source(self.duration, self.pitch.to_frequency());
         (
             self.time,
             self.duration,
             Box::new(source)
         )
+    }
+}
+
+impl From<ScheduledSound> for AtomicSound {
+    fn from(value: ScheduledSound) -> Self {
+        AtomicSound {
+            start: value.time,
+            duration: value.duration,
+            volume: value.volume,
+            pitch: value.pitch,
+            instrument: value.instrument,
+        }
     }
 }
 
@@ -118,7 +130,7 @@ impl Scheduler {
                             duration,
                             volume,
                             instrument,
-                            pitch: e.pitch.to_frequency(),
+                            pitch: e.pitch,
                         }
                     })
                     .map(|mut se| {

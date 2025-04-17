@@ -1,13 +1,16 @@
 pub mod scan;
 pub mod interactive;
 
-use crate::cfg::scan::Scanner;
+use std::cmp::PartialEq;
+use crate::cfg::scan::{GrammarScanner, Scanner};
 use crate::cfg::scan::{consume, MusicStringScanner, ScanError};
 use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
-use crate::time::{BeatUnit, MusicTime, TimeSignature};
+use crate::time::{Beat, BeatUnit, MusicTime, TimeSignature};
 use std::collections::HashMap;
 use std::str::FromStr;
+use num::Zero;
 use serde::{Deserialize, Serialize};
+use crate::cfg::interactive::TracedString;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grammar {
@@ -41,7 +44,7 @@ pub enum Symbol {
     T(Terminal),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NonTerminal {
     Custom(String),
 }
@@ -70,6 +73,26 @@ pub enum TerminalNote {
 pub enum MetaControl {
     ChangeInstrument(Instrument),
     ChangeVolume(Volume),
+}
+
+impl Grammar {
+    pub fn new(start: NonTerminal, productions: Vec<Production>) -> Self {
+        Grammar { start, productions }
+    }
+
+    pub fn get_production(&self, nt: &NonTerminal) -> Option<&Production> {
+        self.productions.iter().find(|p| &p.0 == nt)
+    }
+}
+
+impl FromStr for Grammar {
+    type Err = ScanError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let scanner = consume(GrammarScanner);
+        let (grammar, _s) = scanner.scan(s)?;
+        Ok(grammar)
+    }
 }
 
 impl MusicString {
@@ -192,8 +215,142 @@ impl MusicString {
             time_signature,
         }
     }
+
+    pub fn parallel_rewrite(&self, grammar: &Grammar) -> Self {
+        let mut new_string = vec![];
+        for (i, mp) in self.0.iter().enumerate() {
+            match mp {
+                MusicPrimitive::Simple(x) => match x {
+                    Symbol::NT(nt) => {
+                        if let Some(Production(nt, ms)) = grammar.get_production(nt) {
+                            new_string.extend(ms.clone().0);
+                        }
+                    }
+                    x => {
+                        new_string.push(MusicPrimitive::Simple(x.clone()));
+                    }
+                }
+                MusicPrimitive::Split { branches } => {
+                    let new_branches = branches
+                        .iter()
+                        .map(|ms| ms.parallel_rewrite(grammar))
+                        .collect::<Vec<_>>();
+                    new_string.push(MusicPrimitive::Split { branches: new_branches });
+                }
+                MusicPrimitive::Repeat { num, content } => {
+                    let new_content = content.parallel_rewrite(grammar);
+                    new_string.push(MusicPrimitive::Repeat {
+                        num: *num,
+                        content: new_content,
+                    });
+                }
+            }
+        }
+        MusicString(new_string)
+    }
+
+    pub fn parallel_rewrite_n(&self, grammar: &Grammar, n: usize) -> Self {
+        let mut new_string = self.clone();
+        for _i in 0..n {
+            new_string = new_string.parallel_rewrite(grammar);
+        }
+        new_string
+    }
 }
 
+impl ToString for MusicString {
+    fn to_string(&self) -> String {
+        let mut s = String::new();
+        for mp in &self.0 {
+            match mp {
+                MusicPrimitive::Simple(sym) => {
+                    let sym_to_string = sym.to_string();
+                    s.push_str(&sym_to_string);
+                },
+                MusicPrimitive::Split { branches } => {
+                    s.push_str("{");
+                    for branch in branches {
+                        s.push_str(&branch.to_string());
+                        s.push('|');
+                    }
+                    s.push('}');
+                }
+                MusicPrimitive::Repeat { num, content } => {
+                    s.push_str(&format!("[{}][", num));
+                    s.push_str(&content.to_string());
+                    s.push(']');
+                }
+            }
+            s.push(' ');
+        }
+        s
+    }
+}
+
+impl ToString for Symbol {
+    fn to_string(&self) -> String {
+        match self {
+            Symbol::NT(nt) => nt.to_string(),
+            Symbol::T(t) => t.to_string(),
+        }
+    }
+}
+
+impl ToString for NonTerminal {
+    fn to_string(&self) -> String {
+        match self {
+            NonTerminal::Custom(s) => s.clone(),
+        }
+    }
+}
+
+impl ToString for Terminal {
+    fn to_string(&self) -> String {
+        match self {
+            Terminal::Music { duration, note } => {
+                match note {
+                    TerminalNote::Note { pitch } => {
+                        let letter = pitch.letter_name();
+                        format!(":{letter}<{}>", duration.to_string())
+                    }
+                    TerminalNote::Rest => {
+                        format!(":_<{}>", duration.to_string())
+                    }
+                }
+            }
+            Terminal::Meta(control) => control.to_string(),
+        }
+    }
+}
+
+impl ToString for MusicTime {
+    fn to_string(&self) -> String {
+        let MusicTime(measures, beats) = self;
+        let beat_str = if *beats == Beat::zero() {
+            "0".to_string()
+        } else {
+            if beats.denominator() == 1 {
+                format!("{}", beats.numerator())
+            } else {
+                format!("{}/{}", beats.numerator(), beats.denominator())
+            }
+        };
+        if *measures == 0 {
+            format!("{}", beat_str)
+        } else {
+            format!("{}m+{}", measures, beat_str)
+        }
+    }
+}
+
+impl ToString for MetaControl {
+    fn to_string(&self) -> String {
+        match self {
+            MetaControl::ChangeInstrument(i) => format!(":i={:?}", i),
+            MetaControl::ChangeVolume(v) => format!(":v={:?}", v),
+        }
+    }
+}
 impl FromStr for MusicString {
     type Err = ScanError;
 

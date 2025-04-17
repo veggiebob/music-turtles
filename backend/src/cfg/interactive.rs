@@ -3,15 +3,16 @@
 // so that they can be reversed. An interactive CFG can be rendered into a MusicString.
 
 use std::collections::HashMap;
+use rocket::yansi::Paint;
 use serde::{Deserialize, Serialize};
-use crate::cfg::{Grammar, MusicPrimitive, MusicString, Production};
+use crate::cfg::{Grammar, MusicPrimitive, MusicString, Production, Symbol};
 
 pub struct InteractiveCFG {
     grammar: Grammar,
     root: TracedString
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TracedString {
     original: MusicString,
     productions: HashMap<usize, (Production, TracedString)>

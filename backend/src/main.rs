@@ -1,6 +1,12 @@
+use std::io::{stdin, stdout, Write};
 use crate::time::{Beat, MusicTime, TimeSignature};
 use rodio::Source;
 use std::ops::DerefMut;
+use std::thread;
+use std::time::Duration;
+use midir::{MidiOutput, MidiOutputConnection};
+use midly::live::LiveEvent;
+use midly::MidiMessage;
 use rocket::http::Status;
 use rocket::State;
 use crate::cfg::Grammar;
@@ -11,7 +17,7 @@ use rocket::serde::{Serialize, Deserialize};
 use rocket_cors::CorsOptions;
 use crate::cfg::interactive::TracedString;
 use crate::local_playback::run;
-use crate::player::Player;
+use crate::player::{MidiPlayer, Player};
 use crate::scheduler::Scheduler;
 
 #[macro_use]
@@ -72,15 +78,92 @@ async fn play(music_tree: Json<TracedString>) -> Result<(), Status> {
     Ok(())
 }
 
-#[launch]
-fn rocket() -> _ {
-    let cors = CorsOptions::default()
-        .to_cors()
-        .expect("error creating CORS fairing");
-    rocket::build()
-        .attach(cors)
-        .manage(ServerConfig {
-            data_path: "../data".to_string()
-        })
-        .mount("/", routes![grammar, play])
+// #[launch]
+// fn rocket() -> _ {
+//     let cors = CorsOptions::default()
+//         .to_cors()
+//         .expect("error creating CORS fairing");
+//     rocket::build()
+//         .attach(cors)
+//         .manage(ServerConfig {
+//             data_path: "../data".to_string()
+//         })
+//         .mount("/", routes![grammar, play])
+// }
+
+pub fn main() {
+    let player = MidiPlayer::new("yay".to_string());
+    // let scheduler = Scheduler {
+    //     bpm: 80.0,
+    //     time_signature: TimeSignature::common(),
+    //     tracks: vec![],
+    //     lookahead: MusicTime(),
+    //     looped: false,
+    //     loop_time: MusicTime(),
+    // }
+    // run_midi()
+}
+
+pub fn other() -> Result<(), Box<dyn std::error::Error>> {
+    let midi_out = MidiOutput::new("test").unwrap();
+    // List available ports
+    let out_ports = midi_out.ports();
+    println!("Available output ports:");
+    for (i, p) in out_ports.iter().enumerate() {
+        println!("{}: {}", i, midi_out.port_name(p)?);
+    }
+
+    // Pick a port
+    print!("Select output port: ");
+    stdout().flush()?;
+    let mut input = String::new();
+    stdin().read_line(&mut input)?;
+    let index: usize = input.trim().parse()?;
+    let port = &out_ports[index];
+
+    // Connect
+    let mut conn: MidiOutputConnection = midi_out.connect(port, "midir-connection")?;
+
+    fn note_on_message(channel: u8, key: u8) -> Vec<u8> {
+        let ev = LiveEvent::Midi {
+            channel: channel.into(),
+            message: MidiMessage::NoteOn {
+                key: key.into(),
+                vel: 127.into(),
+            },
+        };
+        let mut buf = Vec::new();
+        ev.write(&mut buf).unwrap();
+        buf
+    }
+
+    fn note_off_message(channel: u8, key: u8) -> Vec<u8> {
+        let ev = LiveEvent::Midi {
+            channel: channel.into(),
+            message: MidiMessage::NoteOff {
+                key: key.into(),
+                vel: 0.into(), // standard to send 0 velocity
+            },
+        };
+        let mut buf = Vec::new();
+        ev.write(&mut buf).unwrap();
+        buf
+    }
+
+    loop {
+        // Send Note On
+        let note = 60; // Middle C
+        let channel = 0;
+        conn.send(&note_on_message(channel, note))?;
+        println!("Note on");
+
+        thread::sleep(Duration::from_secs(1));
+
+        // Send Note Off
+        conn.send(&note_off_message(channel, note))?;
+        println!("Note off");
+
+        thread::sleep(Duration::from_secs(1));
+    }
+    Ok(())
 }

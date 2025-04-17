@@ -132,6 +132,32 @@ impl Pitch {
         let frequency = 440.0 * 2f32.powf(octave - 4. + (note_num - 9.0) / 12.0);
         frequency
     }
+    pub fn to_midi_note(&self) -> u8 {
+        let Pitch(octave, note_num) = *self;
+        let note_num = note_num as u8;
+        let octave = octave as u8;
+        octave * 12 + note_num + 9
+    }
+
+    pub fn letter_name(&self) -> String {
+        let Pitch(_, note_num) = *self;
+        let note_num = note_num as u8;
+        match note_num {
+            0 => "C",
+            1 => "C#",
+            2 => "D",
+            3 => "D#",
+            4 => "E",
+            5 => "F",
+            6 => "F#",
+            7 => "G",
+            8 => "G#",
+            9 => "A",
+            10 => "A#",
+            11 => "B",
+            _ => panic!("Invalid note number")
+        }.to_string()
+    }
 }
 
 #[derive(Clone, Debug)]
