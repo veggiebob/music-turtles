@@ -122,7 +122,7 @@ impl Scheduler {
                 events.into_iter()
                     .map(|e| {
                         let start = e.start.to_seconds(self.time_signature, self.bpm);
-                        let duration = e.duration.as_music_time(self.time_signature).to_seconds(self.time_signature, self.bpm);
+                        let duration = e.duration.as_music_time(self.time_signature).to_seconds(self.time_signature, self.bpm) * 0.9;
                         let volume = e.volume;
                         let instrument = track.instrument;
                         ScheduledSound {

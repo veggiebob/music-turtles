@@ -1,0 +1,24 @@
+start S
+
+S = E
+
+A = :a B
+A = :a G
+
+B = :b C
+B = :b A
+
+C = :c D
+C = :c B
+
+D = :d E
+D = :d C
+
+E = :e F
+E = :e D
+
+F = :f G
+F = :f E
+
+G = :g A
+G = :g F

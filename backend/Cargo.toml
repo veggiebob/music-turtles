@@ -12,3 +12,4 @@ rocket = { version = "0.5.1", features = ["json"] }
 rocket_cors = "0.6.0"
 midly = "0.5.3"
 midir = "0.10.1"
+rand = "0.8.5"

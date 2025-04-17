@@ -45,7 +45,7 @@ B = :0c
 
 use crate::cfg::{Grammar, MetaControl, MusicPrimitive, MusicString, NonTerminal, Production, Symbol, Terminal, TerminalNote};
 use crate::composition::{Instrument, Octave, Pitch, Volume};
-use crate::time::{Beat, BeatUnit, MusicTime};
+use crate::time::{Beat, MusicTime};
 
 
 #[derive(Debug)]
@@ -93,26 +93,6 @@ impl Scanner for GrammarScanner {
     type Output = Grammar;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        // concat(
-        //     scan_map(
-        //         concat(
-        //             StringScanner("start".to_string()),
-        //             scan_map(concat(SpaceScanner, NonTerminalScanner), |(_s, nt)| nt),
-        //         ),
-        //         |(_s, nt)| nt,
-        //     ),
-        //     kleene(ProductionScanner),
-        // )
-        // .scan(input)
-        // .map(|((s, prod), left)| {
-        //     (
-        //         Grammar {
-        //             start: NonTerminal::Custom(s),
-        //             productions: prod,
-        //         },
-        //         left,
-        //     )
-        // })
         let lines = input.lines()
             .map(|line| line.trim())
             .filter(|line| !line.is_empty())

@@ -2,6 +2,7 @@ use std::io::{stdin, stdout, Write};
 use crate::time::{Beat, MusicTime, TimeSignature};
 use rodio::Source;
 use std::ops::DerefMut;
+use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use midir::{MidiOutput, MidiOutputConnection};
@@ -9,14 +10,14 @@ use midly::live::LiveEvent;
 use midly::MidiMessage;
 use rocket::http::Status;
 use rocket::State;
-use crate::cfg::Grammar;
+use crate::cfg::{Grammar, MusicString};
 use crate::cfg::scan::{consume, GrammarScanner};
 use crate::cfg::scan::Scanner;
 use rocket::serde::json::{Json, Value, json};
 use rocket::serde::{Serialize, Deserialize};
 use rocket_cors::CorsOptions;
 use crate::cfg::interactive::TracedString;
-use crate::local_playback::run;
+use crate::local_playback::{run, run_midi};
 use crate::player::{MidiPlayer, Player};
 use crate::scheduler::Scheduler;
 
@@ -92,16 +93,31 @@ async fn play(music_tree: Json<TracedString>) -> Result<(), Status> {
 // }
 
 pub fn main() {
-    let player = MidiPlayer::new("yay".to_string());
-    // let scheduler = Scheduler {
-    //     bpm: 80.0,
-    //     time_signature: TimeSignature::common(),
-    //     tracks: vec![],
-    //     lookahead: MusicTime(),
-    //     looped: false,
-    //     loop_time: MusicTime(),
-    // }
-    // run_midi()
+    let axiom = "S";
+    let grm_path = "../data/grm4.grm";
+    let grm_contents = std::fs::read_to_string(grm_path).unwrap();
+    let grammar = Grammar::from_str(&grm_contents).unwrap();
+    let mut string = MusicString::from_str(axiom).unwrap();
+    for i in 0..20 {
+        println!("After {} iters: {}", i, string.to_string());
+        string = string.parallel_rewrite(&grammar, true);
+    }
+    println!("Final string: {}", string.to_string());
+
+    let music = string.compose(TimeSignature::common());
+    // println!("{music:#?}");
+    let mut scheduler = Scheduler {
+        bpm: 80.0,
+        time_signature: TimeSignature(4, 4),
+        tracks: vec![],
+        lookahead: MusicTime::measures(1),
+        looped: false,
+        loop_time: MusicTime::measures(1),
+    };
+    scheduler.set_composition(music);
+    let player = MidiPlayer::new("test".to_string()).unwrap();
+    thread::sleep(Duration::from_millis(1000)); // give player time to get ready
+    run_midi(&mut scheduler, 50, player);
 }
 
 pub fn other() -> Result<(), Box<dyn std::error::Error>> {

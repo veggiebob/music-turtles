@@ -1,16 +1,16 @@
 pub mod scan;
 pub mod interactive;
 
-use std::cmp::PartialEq;
-use crate::cfg::scan::{GrammarScanner, Scanner};
 use crate::cfg::scan::{consume, MusicStringScanner, ScanError};
+use crate::cfg::scan::{GrammarScanner, Scanner};
 use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
-use crate::time::{Beat, BeatUnit, MusicTime, TimeSignature};
+use crate::time::{Beat, MusicTime, TimeSignature};
+use num::Zero;
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::str::FromStr;
-use num::Zero;
-use serde::{Deserialize, Serialize};
-use crate::cfg::interactive::TracedString;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grammar {
@@ -82,6 +82,19 @@ impl Grammar {
 
     pub fn get_production(&self, nt: &NonTerminal) -> Option<&Production> {
         self.productions.iter().find(|p| &p.0 == nt)
+    }
+
+    pub fn get_production_random(
+        &self,
+        nt: &NonTerminal,
+    ) -> Option<&Production> {
+        let mut rng = rand::thread_rng();
+        let productions: Vec<_> = self.productions.iter().filter(|p| &p.0 == nt).collect();
+        if productions.is_empty() {
+            None
+        } else {
+            Some(productions[rng.gen_range(0..productions.len())])
+        }
     }
 }
 
@@ -216,13 +229,13 @@ impl MusicString {
         }
     }
 
-    pub fn parallel_rewrite(&self, grammar: &Grammar) -> Self {
+    pub fn parallel_rewrite(&self, grammar: &Grammar, random: bool) -> Self {
         let mut new_string = vec![];
         for (i, mp) in self.0.iter().enumerate() {
             match mp {
                 MusicPrimitive::Simple(x) => match x {
                     Symbol::NT(nt) => {
-                        if let Some(Production(nt, ms)) = grammar.get_production(nt) {
+                        if let Some(Production(nt, ms)) = if random { grammar.get_production_random(nt) } else { grammar.get_production(nt) } {
                             new_string.extend(ms.clone().0);
                         }
                     }
@@ -233,12 +246,12 @@ impl MusicString {
                 MusicPrimitive::Split { branches } => {
                     let new_branches = branches
                         .iter()
-                        .map(|ms| ms.parallel_rewrite(grammar))
+                        .map(|ms| ms.parallel_rewrite(grammar, random))
                         .collect::<Vec<_>>();
                     new_string.push(MusicPrimitive::Split { branches: new_branches });
                 }
                 MusicPrimitive::Repeat { num, content } => {
-                    let new_content = content.parallel_rewrite(grammar);
+                    let new_content = content.parallel_rewrite(grammar, random);
                     new_string.push(MusicPrimitive::Repeat {
                         num: *num,
                         content: new_content,
@@ -249,10 +262,10 @@ impl MusicString {
         MusicString(new_string)
     }
 
-    pub fn parallel_rewrite_n(&self, grammar: &Grammar, n: usize) -> Self {
+    pub fn parallel_rewrite_n(&self, grammar: &Grammar, random: bool, n: usize) -> Self {
         let mut new_string = self.clone();
         for _i in 0..n {
-            new_string = new_string.parallel_rewrite(grammar);
+            new_string = new_string.parallel_rewrite(grammar, random);
         }
         new_string
     }
@@ -266,13 +279,14 @@ impl ToString for MusicString {
                 MusicPrimitive::Simple(sym) => {
                     let sym_to_string = sym.to_string();
                     s.push_str(&sym_to_string);
-                },
+                }
                 MusicPrimitive::Split { branches } => {
                     s.push_str("{");
-                    for branch in branches {
-                        s.push_str(&branch.to_string());
-                        s.push('|');
-                    }
+                    let str = branches.into_iter()
+                        .map(|b| b.to_string())
+                        .reduce(|b1, b2| b1 + " | " + &b2)
+                        .unwrap_or("".to_string());
+                    s.push_str(&str);
                     s.push('}');
                 }
                 MusicPrimitive::Repeat { num, content } => {

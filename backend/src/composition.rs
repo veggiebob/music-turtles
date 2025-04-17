@@ -143,18 +143,18 @@ impl Pitch {
         let Pitch(_, note_num) = *self;
         let note_num = note_num as u8;
         match note_num {
-            0 => "C",
-            1 => "C#",
-            2 => "D",
-            3 => "D#",
-            4 => "E",
-            5 => "F",
-            6 => "F#",
-            7 => "G",
-            8 => "G#",
-            9 => "A",
-            10 => "A#",
-            11 => "B",
+            0 => "A",
+            1 => "Bb",
+            2 => "B",
+            3 => "C",
+            4 => "C#",
+            5 => "D",
+            6 => "Eb",
+            7 => "E",
+            8 => "F",
+            9 => "F#",
+            10 => "G",
+            11 => "Ab",
             _ => panic!("Invalid note number")
         }.to_string()
     }
