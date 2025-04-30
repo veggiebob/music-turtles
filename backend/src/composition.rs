@@ -30,6 +30,7 @@ pub struct Track {
     pub identifier: TrackId,
     pub instrument: Instrument,
     pub events: Vec<Event>,
+    pub rests: Vec<Event>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -57,16 +58,38 @@ impl Event {
     }
 }
 
+// weird that option doesn't work like this
+fn min_option<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (Some(x), None) => Some(x),
+        (None, Some(y)) => Some(y),
+        (None, None) => None,
+    }
+}
+fn max_option<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.max(y)),
+        (Some(x), None) => Some(x),
+        (None, Some(y)) => Some(y),
+        (None, None) => None,
+    }
+}
+
 impl Track {
     pub fn get_start(&self) -> Option<MusicTime> {
-        self.events.iter()
+        min_option(self.events.iter()
             .map(|e| e.start)
-            .min()
+            .min(), self.rests.iter()
+            .map(|e| e.start)
+            .min())
     }
     pub fn get_end(&self, time_signature: TimeSignature) -> Option<MusicTime> {
-        self.events.iter()
+        max_option(self.events.iter()
             .map(|e| e.get_end(time_signature))
-            .max()
+            .max(), self.rests.iter()
+                .map(|e| e.get_end(time_signature))
+                .max())
     }
 
     pub fn get_duration(&self, time_signature: TimeSignature) -> MusicTime {
@@ -80,9 +103,10 @@ impl Track {
     }
 
     /// End is always inclusive
+    /// Doesn't include rests
     pub fn get_events_starting_between(&self, start: MusicTime, end: MusicTime, start_exclusive: bool) -> Vec<Event> {
         if (start_exclusive && start >= end) || start > end {
-            return Vec::new()
+            return Vec::new();
         }
         let mut es = self.events.iter()
             .filter(|e| if start_exclusive {
@@ -98,6 +122,7 @@ impl Track {
 
     pub fn shift_by(&mut self, offset: MusicTime, time_signature: TimeSignature) {
         self.events.iter_mut()
+            .chain(self.rests.iter_mut())
             .for_each(|e|
                 e.start = e.start.with(time_signature) + offset
             );
@@ -116,10 +141,16 @@ impl Add<Self> for Track {
             events.push(event);
         }
         events.sort();
+        let mut rests = self.rests;
+        for rest in rhs.rests {
+            rests.push(rest);
+        }
+        rests.sort();
         Track {
             identifier: self.identifier,
             instrument: self.instrument,
             events,
+            rests,
         }
     }
 }
@@ -163,7 +194,7 @@ impl Pitch {
 #[derive(Clone, Debug)]
 pub struct Composition {
     pub tracks: Vec<Track>,
-    pub time_signature: TimeSignature
+    pub time_signature: TimeSignature,
 }
 
 impl Composition {

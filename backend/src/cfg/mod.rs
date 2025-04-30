@@ -121,6 +121,23 @@ impl MusicString {
                         identifier: TrackId::Instrument(instrument),
                         instrument,
                         events: vec![e],
+                        rests: vec![]
+                    },
+                );
+            }
+        }
+
+        fn add_rest_event(tracks: &mut HashMap<Instrument, Track>, e: Event, instrument: Instrument) {
+            if let Some(mut track) = tracks.get_mut(&instrument) {
+                track.rests.push(e);
+            } else {
+                tracks.insert(
+                    instrument,
+                    Track {
+                        identifier: TrackId::Instrument(instrument),
+                        instrument,
+                        events: vec![],
+                        rests: vec![e]
                     },
                 );
             }
@@ -158,7 +175,19 @@ impl MusicString {
                             );
                             *duration
                         }
-                        TerminalNote::Rest => *duration,
+                        TerminalNote::Rest => {
+                            add_rest_event(
+                                &mut tracks,
+                                Event {
+                                    start: current_mt,
+                                    duration: duration.with(time_signature).total_beats(),
+                                    volume: Volume(0),
+                                    pitch: Pitch(0, 0),
+                                },
+                                current_instrument
+                            );
+                            *duration
+                        },
                     },
                     Symbol::T(Terminal::Meta(control)) => {
                         match control {
@@ -191,7 +220,7 @@ impl MusicString {
                             }
                         }
                         // there are none, so yes they are
-                        None => None,
+                        None => Some(MusicTime::zero()),
                     };
                     if let Some(dur) = uniform_duration {
                         for (_d, comp) in comps {
@@ -371,5 +400,20 @@ impl FromStr for MusicString {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let scanner = consume(MusicStringScanner);
         scanner.scan(s).map(|(r, _s)| r)
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use std::io::Cursor;
+    use serde_json::Deserializer;
+
+    #[test]
+    fn test() {
+        let data = vec![1, 2, 3];
+        let mut c = Cursor::new(data);
+        let deserializer = Deserializer::new(c);
+
     }
 }
