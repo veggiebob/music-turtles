@@ -6,7 +6,12 @@ use crate::time::{Beat, MusicTime, TimeSignature};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Serialize, Deserialize)]
 pub enum Instrument {
-    SineWave
+    SineWave,
+    Piano,
+    Drum,
+    Snare,
+    Cymbal,
+    Bass,
 }
 
 /// [0, 12)
@@ -245,6 +250,10 @@ impl FromStr for Instrument {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "sine" => Ok(Instrument::SineWave),
+            "piano" => Ok(Instrument::Piano),
+            "snare" => Ok(Instrument::Snare),
+            "bass" => Ok(Instrument::Bass),
+            "cymbal" => Ok(Instrument::Cymbal),
             _ => Err(format!("Unknown instrument: {}", s))
         }
     }

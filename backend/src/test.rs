@@ -13,7 +13,7 @@ fn compose_something() {
     let input = "{[3][:c<2> :d<2>] | [3][:c :g :f# :g]}";
     // let input = "[2][:c :d :e {:e | :g}]";
     let string = MusicString::from_str(input).unwrap();
-    let music = string.compose(TimeSignature::common());
+    let music = string.compose(TimeSignature::common(), None);
     println!("{music:#?}");
     let mut scheduler = Scheduler {
         bpm: 80.0,
@@ -43,7 +43,7 @@ fn run_file_grammar() {
     }
     println!("Final string: {}", string.to_string());
 
-    let music = string.compose(TimeSignature::common());
+    let music = string.compose(TimeSignature::common(), None);
     // println!("{music:#?}");
     let mut scheduler = Scheduler {
         bpm: 80.0,

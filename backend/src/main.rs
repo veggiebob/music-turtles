@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{stdin, stdout, Write};
 use crate::time::{Beat, MusicTime, TimeSignature};
 use rodio::Source;
@@ -17,6 +18,7 @@ use rocket::serde::json::{Json, Value, json};
 use rocket::serde::{Serialize, Deserialize};
 use rocket_cors::CorsOptions;
 use crate::cfg::interactive::TracedString;
+use crate::composition::Instrument::*;
 use crate::local_playback::{run, run_midi};
 use crate::player::{MidiPlayer, Player};
 use crate::scheduler::Scheduler;
@@ -60,7 +62,7 @@ async fn grammar(filename: &str, config: &State<ServerConfig>) -> Result<Json<Gr
 async fn play(music_tree: Json<TracedString>) -> Result<(), Status> {
     let music_string = music_tree.into_inner().render();
     let time_sig = TimeSignature::common();
-    let composition = music_string.compose(time_sig);
+    let composition = music_string.compose(time_sig, None);
     let mut scheduler = Scheduler {
         bpm: 80.0,
         time_signature: time_sig,
@@ -94,7 +96,7 @@ async fn play(music_tree: Json<TracedString>) -> Result<(), Status> {
 
 pub fn main() {
     let axiom = "S";
-    let grm_path = "../data/grm4.grm";
+    let grm_path = "../data/beat-1.grm";
     let grm_contents = std::fs::read_to_string(grm_path).unwrap();
     let grammar = Grammar::from_str(&grm_contents).unwrap();
     let mut string = MusicString::from_str(axiom).unwrap();
@@ -104,7 +106,7 @@ pub fn main() {
     }
     println!("Final string: {}", string.to_string());
 
-    let music = string.compose(TimeSignature::common());
+    let music = string.compose(TimeSignature::common(), None);
     // println!("{music:#?}");
     let mut scheduler = Scheduler {
         bpm: 80.0,
@@ -114,8 +116,21 @@ pub fn main() {
         looped: false,
         loop_time: MusicTime::measures(1),
     };
+    let port_mapping = vec![
+        SineWave,
+        Piano,
+        Drum,
+        Snare,
+        Cymbal,
+        Bass,
+    ].into_iter().map(|i| (i, match i {
+        SineWave => 0,
+        Piano => 1,
+        Bass => 2,
+        _ => 0
+    })).collect();
     scheduler.set_composition(music);
-    let player = MidiPlayer::new("test".to_string()).unwrap();
+    let player = MidiPlayer::new("test".to_string(), port_mapping).unwrap();
     thread::sleep(Duration::from_millis(1000)); // give player time to get ready
     run_midi(&mut scheduler, 50, player);
 }

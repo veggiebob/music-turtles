@@ -1,0 +1,10 @@
+start S
+
+S = A
+
+A = { c0 | c1 | c2 }
+
+c0 = ::i=snare [4][:4c<1>]
+c1 = ::i=piano [4][:4e<1>]
+c2 = ::i=bass [4][:4g<1>]
+

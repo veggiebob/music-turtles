@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
@@ -99,22 +100,27 @@ impl Player {
 
 pub struct MidiPlayer {
     name: String,
-    conn: Arc<Mutex<midir::MidiOutputConnection>>,
+    port_mapping: HashMap<Instrument, usize>,
+    conn: Arc<HashMap<usize, Mutex<midir::MidiOutputConnection>>>,
 }
 
 impl MidiPlayer {
-    pub fn new(name: String) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(name: String, port_mapping: HashMap<Instrument, usize>) -> Result<Self, Box<dyn std::error::Error>> {
         let midi_out = midir::MidiOutput::new(&name)?;
         let out_ports = midi_out.ports();
         println!("Available output ports:");
+        let mut conns = HashMap::new();
         for (i, p) in out_ports.iter().enumerate() {
+            let midi_out = midir::MidiOutput::new(&name)?;
             println!("{}: {}", i, midi_out.port_name(p)?);
+            let conn = midi_out.connect(p, &format!("midir-connection-{i}"))?;
+            conns.insert(i, Mutex::new(conn));
         }
-        // Pick a port
-        let port = &out_ports[0];
-        let conn = midi_out.connect(port, "midir-connection")?;
-        let conn = Arc::new(Mutex::new(conn));
-        Ok(MidiPlayer { name, conn })
+        // // Pick a port
+        // let port = &out_ports[0];
+        // let conn = midi_out.connect(port, "midir-connection")?;
+        // let conn = Arc::new(Mutex::new(conn));
+        Ok(MidiPlayer { name, port_mapping, conn: Arc::new(conns) })
     }
 }
 
@@ -147,15 +153,20 @@ impl AudioPlayer for MidiPlayer {
             ev.write(&mut buf).unwrap();
             buf
         };
+        let instrument_port = self.port_mapping.get(&event.instrument)
+            .map(|x| *x)
+            .unwrap_or(0);
         let arc = Arc::clone(&self.conn);
-        let mut conn = arc.lock().unwrap();
-        conn.send(&note_on_message(channel, note, volume)).unwrap();
         let thread_conn = Arc::clone(&self.conn);
+        let mut conn = arc.get(&instrument_port).unwrap().lock()
+            .unwrap();
+        conn.send(&note_on_message(channel, note, volume)).unwrap();
         let duration = event.duration;
         thread::spawn(move || {
             thread::sleep(Duration::from_secs_f32(duration));
-            let mut conn = thread_conn.lock().unwrap();
-            conn.send(&note_off_message(channel, note, volume));
+            let i = instrument_port;
+            let mut conn = thread_conn.get(&i).unwrap().lock().unwrap();
+            conn.send(&note_off_message(channel, note, volume)).unwrap();
         });
     }
 }

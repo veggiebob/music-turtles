@@ -109,7 +109,7 @@ impl FromStr for Grammar {
 }
 
 impl MusicString {
-    pub fn compose(&self, time_signature: TimeSignature) -> Composition {
+    pub fn compose(&self, time_signature: TimeSignature, starting_instrument: Option<Instrument>) -> Composition {
         let mut tracks = HashMap::new();
         fn add_event(tracks: &mut HashMap<Instrument, Track>, e: Event, instrument: Instrument) {
             if let Some(mut track) = tracks.get_mut(&instrument) {
@@ -155,7 +155,7 @@ impl MusicString {
             }
         }
         let mut current_mt = MusicTime::zero();
-        let mut current_instrument = Instrument::SineWave;
+        let mut current_instrument = starting_instrument.unwrap_or(Instrument::SineWave);
         let mut current_volume = Volume(50);
         for mp in self.0.iter() {
             let duration = match mp {
@@ -204,7 +204,7 @@ impl MusicString {
                 MusicPrimitive::Split { branches } => {
                     let comps: Vec<_> = branches
                         .into_iter()
-                        .map(|ms| ms.compose(time_signature))
+                        .map(|ms| ms.compose(time_signature, Some(current_instrument)))
                         .map(|mut c| {
                             c.shift_by(current_mt);
                             c
@@ -234,7 +234,7 @@ impl MusicString {
                     }
                 }
                 MusicPrimitive::Repeat { content, num } => {
-                    let composed = content.compose(time_signature);
+                    let composed = content.compose(time_signature, Some(current_instrument));
                     let duration = composed.get_duration();
                     let mut offset = MusicTime::zero();
                     for _i in 0..*num {
@@ -266,6 +266,8 @@ impl MusicString {
                     Symbol::NT(nt) => {
                         if let Some(Production(nt, ms)) = if random { grammar.get_production_random(nt) } else { grammar.get_production(nt) } {
                             new_string.extend(ms.clone().0);
+                        } else {
+                            println!("Warning: no production for {nt:?}");
                         }
                     }
                     x => {
@@ -389,8 +391,8 @@ impl ToString for MusicTime {
 impl ToString for MetaControl {
     fn to_string(&self) -> String {
         match self {
-            MetaControl::ChangeInstrument(i) => format!(":i={:?}", i),
-            MetaControl::ChangeVolume(v) => format!(":v={:?}", v),
+            MetaControl::ChangeInstrument(i) => format!("::i={:?}", i),
+            MetaControl::ChangeVolume(v) => format!("::v={:?}", v),
         }
     }
 }
