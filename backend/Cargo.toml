@@ -13,3 +13,7 @@ rocket_cors = "0.6.0"
 midly = "0.5.3"
 midir = "0.10.1"
 rand = "0.8.5"
+strsim = "0.11.1"
+values_macro_derive = { path="../values_macro_derive" }
+simplelog = "0.12"
+log = "0.4.26"

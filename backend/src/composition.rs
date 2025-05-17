@@ -2,16 +2,26 @@ use std::ops::Add;
 use std::collections::HashMap;
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
+use values_macro_derive::EnumValues;
 use crate::time::{Beat, MusicTime, TimeSignature};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Serialize, Deserialize, EnumValues)]
 pub enum Instrument {
     SineWave,
     Piano,
-    Drum,
-    Snare,
-    Cymbal,
     Bass,
+    // percussion
+    BongoHigh,
+    BongoLow,
+    Shaker1,
+    Shaker2,
+}
+
+impl Instrument {
+    pub fn is_percussion(&self) -> bool {
+        // matches!(self, Instrument::Drum | Instrument::Snare | Instrument::Cymbal)
+        false
+    }
 }
 
 /// [0, 12)
@@ -82,6 +92,46 @@ fn max_option<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
 }
 
 impl Track {
+    pub fn visualize(&self, columns: usize, time_signature: TimeSignature) -> String {
+        let mut s = String::new();
+        s.push('[');
+        let duration = self.get_duration(time_signature);
+        let bpm = 1.;
+        let total_time = duration.to_seconds(time_signature, bpm);
+        for i in 0..columns {
+            let time = (i as f32 / columns as f32) * total_time;
+            let mt = MusicTime::from_seconds(time_signature, bpm, time);
+            let evts = self.get_events_at(mt, time_signature);
+            let rest_evts = self.get_rests_at(mt, time_signature);
+            if evts.is_empty() {
+                if rest_evts.is_empty() {
+                    s.push(' ');
+                } else {
+                    s.push('-');
+                }
+            } else {
+                if rest_evts.is_empty() {
+                    s.push('X');
+                } else {
+                    s.push('?');
+                }
+            }
+        }
+        s.push(']');
+        s
+    }
+    fn get_events_at(&self, time: MusicTime, time_signature: TimeSignature) -> Vec<Event> {
+        self.events.iter()
+            .filter(|e| time >= e.start && time <= e.get_end(time_signature))
+            .map(|e| *e)
+            .collect()
+    }
+    fn get_rests_at(&self, time: MusicTime, time_signature: TimeSignature) -> Vec<Event> {
+        self.rests.iter()
+            .filter(|e| time >= e.start && time <= e.get_end(time_signature))
+            .map(|e| *e)
+            .collect()
+    }
     pub fn get_start(&self) -> Option<MusicTime> {
         min_option(self.events.iter()
             .map(|e| e.start)
@@ -203,6 +253,14 @@ pub struct Composition {
 }
 
 impl Composition {
+    pub fn visualize(&self, columns: usize) -> String {
+        let mut s = String::new();
+        for track in &self.tracks {
+            s.push_str(&track.visualize(columns, self.time_signature));
+            s.push('\n');
+        }
+        s
+    }
     pub fn get_duration(&self) -> MusicTime {
         let start = self.tracks.iter().filter_map(|t| t.get_start())
             .min();
@@ -249,12 +307,15 @@ impl FromStr for Instrument {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
-            "sine" => Ok(Instrument::SineWave),
             "piano" => Ok(Instrument::Piano),
-            "snare" => Ok(Instrument::Snare),
-            "bass" => Ok(Instrument::Bass),
-            "cymbal" => Ok(Instrument::Cymbal),
-            _ => Err(format!("Unknown instrument: {}", s))
+            s => {
+                let instrument_enum: HashMap<_, _> = Instrument::str_values()
+                    .map(|(i, i_name)| (i_name.to_ascii_lowercase(), i))
+                    .collect();
+                instrument_enum.get(s)
+                    .map(|i| *i)
+                    .ok_or(format!("Unknown instrument: {}", s))
+            }
         }
     }
 }

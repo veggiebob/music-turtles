@@ -102,18 +102,19 @@ impl Scheduler {
         };
         let mut sounds = self.tracks.iter_mut()
             .flat_map(|(track, cursor)| {
-                let be_exclusive = *cursor != MusicTime::zero();
+                let be_exclusive = false; // *cursor != MusicTime::zero();
                 let events = if looping {
-                    if end_non_looped < *cursor {
-                        vec![]
-                    } else if *cursor <= end_music_time {
-                        track.get_events_starting_between(*cursor, end_music_time, be_exclusive)
-                    } else {
+                    // if end_non_looped < *cursor {
+                    //     vec![]
+                    // } else
+                    // if *cursor <= end_music_time {
+                    //     track.get_events_starting_between(*cursor, end_music_time, be_exclusive)
+                    // } else {
                         let mut to_end = track.get_events_starting_between(*cursor, loop_end, be_exclusive);
                         let from_beg = track.get_events_starting_between(MusicTime::zero(), end_music_time, false);
                         to_end.extend(from_beg);
                         to_end
-                    }
+                    // }
                 } else {
                     track.get_events_starting_between(*cursor, end_music_time, be_exclusive)
                 };
@@ -134,7 +135,7 @@ impl Scheduler {
                         }
                     })
                     .map(|mut se| {
-                        if looping {
+                        if self.looped {
                             while se.time < current_track_pos {
                                 se.time += loop_time_s;
                             }

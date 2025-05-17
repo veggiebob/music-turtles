@@ -1,5 +1,5 @@
 use std::ops::DerefMut;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use crate::player::{AudioPlayer, Player};
@@ -28,19 +28,29 @@ pub fn run<S: DerefMut<Target=Scheduler> + Send>(scheduler: S, scheduler_tick_ms
     });
 }
 
-pub fn run_midi<S: DerefMut<Target=Scheduler> + Send, P: AudioPlayer>(scheduler: S, scheduler_tick_ms: u64, mut player: P) {
+pub fn run_midi<P>(
+    scheduler: Arc<Mutex<Scheduler>>,
+    scheduler_tick_ms: u64,
+    mut player: P
+)
+where
+    P: AudioPlayer
+{
     let (event_send, event_recv) = mpsc::channel();
     thread::scope(move |s| {
         s.spawn(move || {
             let start_time = SystemTime::now();
             let mut scheduler = scheduler;
             loop {
+                let mut scheduler = scheduler.lock().unwrap();
                 if scheduler.ended() {
+                    drop(scheduler);
                     break;
                 }
                 let elapsed_s = start_time.elapsed().unwrap().as_secs_f32();
-                let sc = scheduler.deref_mut();
-                let events = sc.get_next_events_and_update(elapsed_s);
+                let events = scheduler.get_next_events_and_update(elapsed_s);
+                info!("{events:#?}");
+                drop(scheduler);
                 for event in events {
                     event_send.send(event).unwrap();
                 }

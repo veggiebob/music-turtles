@@ -108,8 +108,14 @@ impl FromStr for Grammar {
     }
 }
 
+#[derive(Debug)]
+pub enum ComposeError {
+    MismatchedLengths(String),
+
+}
+
 impl MusicString {
-    pub fn compose(&self, time_signature: TimeSignature, starting_instrument: Option<Instrument>) -> Composition {
+    pub fn compose(&self, time_signature: TimeSignature, starting_instrument: Option<Instrument>) -> Result<Composition, ComposeError> {
         let mut tracks = HashMap::new();
         fn add_event(tracks: &mut HashMap<Instrument, Track>, e: Event, instrument: Instrument) {
             if let Some(mut track) = tracks.get_mut(&instrument) {
@@ -121,7 +127,7 @@ impl MusicString {
                         identifier: TrackId::Instrument(instrument),
                         instrument,
                         events: vec![e],
-                        rests: vec![]
+                        rests: vec![],
                     },
                 );
             }
@@ -137,7 +143,7 @@ impl MusicString {
                         identifier: TrackId::Instrument(instrument),
                         instrument,
                         events: vec![],
-                        rests: vec![e]
+                        rests: vec![e],
                     },
                 );
             }
@@ -184,10 +190,10 @@ impl MusicString {
                                     volume: Volume(0),
                                     pitch: Pitch(0, 0),
                                 },
-                                current_instrument
+                                current_instrument,
                             );
                             *duration
-                        },
+                        }
                     },
                     Symbol::T(Terminal::Meta(control)) => {
                         match control {
@@ -205,6 +211,7 @@ impl MusicString {
                     let comps: Vec<_> = branches
                         .into_iter()
                         .map(|ms| ms.compose(time_signature, Some(current_instrument)))
+                        .err_first()?
                         .map(|mut c| {
                             c.shift_by(current_mt);
                             c
@@ -228,15 +235,16 @@ impl MusicString {
                         }
                         dur
                     } else {
-                        panic!("Not all split tracks have the same duration: {:?}",
-                               comps.iter().map(|(d, c)| d).collect::<Vec<_>>()
-                        )
+                        return Err(ComposeError::MismatchedLengths(
+                            format!("Not all split tracks have the same duration: {:?}",
+                                    comps.iter().map(|(d, c)| d).collect::<Vec<_>>()
+                            )));
                     }
                 }
                 MusicPrimitive::Repeat { content, num } => {
-                    let composed = content.compose(time_signature, Some(current_instrument));
+                    let composed = content.compose(time_signature, Some(current_instrument))?;
                     let duration = composed.get_duration();
-                    let mut offset = MusicTime::zero();
+                    let mut offset = current_mt;
                     for _i in 0..*num {
                         let mut comp_i = composed.clone();
                         comp_i.shift_by(offset);
@@ -247,15 +255,17 @@ impl MusicString {
                     for _i in 0..*num {
                         total_duration = total_duration.with(time_signature) + duration;
                     }
+                    // println!("total duration for {num} repeats is {total_duration:?}, or {:?} * {num}",
+                    //          composed.get_duration());
                     total_duration
                 }
             };
             current_mt = current_mt.with(time_signature) + duration;
         }
-        Composition {
+        Ok(Composition {
             tracks: tracks.into_values().collect(),
             time_signature,
-        }
+        })
     }
 
     pub fn parallel_rewrite(&self, grammar: &Grammar, random: bool) -> Self {
@@ -405,6 +415,26 @@ impl FromStr for MusicString {
     }
 }
 
+pub trait ReduceResultIter<I, E> {
+    fn err_first(self) -> Result<impl Iterator<Item=I>, E>;
+}
+
+impl<I, E, T> ReduceResultIter<I, E> for T
+where
+    T: Iterator<Item=Result<I, E>>,
+{
+    fn err_first(self) -> Result<impl Iterator<Item=I>, E> {
+        let mut processed = vec![];
+        for e in self {
+            match e {
+                Ok(i) => processed.push(i),
+                Err(e) => return Err(e)
+            }
+        }
+        Ok(processed.into_iter())
+    }
+}
+
 
 #[cfg(test)]
 mod test {
@@ -416,6 +446,5 @@ mod test {
         let data = vec![1, 2, 3];
         let mut c = Cursor::new(data);
         let deserializer = Deserializer::new(c);
-
     }
 }

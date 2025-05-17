@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use crate::cfg::{Grammar, MusicString};
@@ -13,7 +15,7 @@ fn compose_something() {
     let input = "{[3][:c<2> :d<2>] | [3][:c :g :f# :g]}";
     // let input = "[2][:c :d :e {:e | :g}]";
     let string = MusicString::from_str(input).unwrap();
-    let music = string.compose(TimeSignature::common(), None);
+    let music = string.compose(TimeSignature::common(), None).unwrap();
     println!("{music:#?}");
     let mut scheduler = Scheduler {
         bpm: 80.0,
@@ -24,10 +26,10 @@ fn compose_something() {
         loop_time: MusicTime::measures(1),
     };
     scheduler.set_composition(music);
-    let player = MidiPlayer::new("test".to_string()).unwrap();
+    let player = MidiPlayer::new("test".to_string(), HashMap::new()).unwrap();
     thread::sleep(Duration::from_millis(1000)); // give player time to get ready
     // run(&mut scheduler, 50, player);
-    run_midi(&mut scheduler, 50, player);
+    run_midi(Arc::new(Mutex::new(&mut scheduler)), 50, player);
 }
 
 #[test]
@@ -43,7 +45,7 @@ fn run_file_grammar() {
     }
     println!("Final string: {}", string.to_string());
 
-    let music = string.compose(TimeSignature::common(), None);
+    let music = string.compose(TimeSignature::common(), None).unwrap();
     // println!("{music:#?}");
     let mut scheduler = Scheduler {
         bpm: 80.0,
@@ -54,9 +56,9 @@ fn run_file_grammar() {
         loop_time: MusicTime::measures(1),
     };
     scheduler.set_composition(music);
-    let player = MidiPlayer::new("test".to_string()).unwrap();
+    let player = MidiPlayer::new("test".to_string(), HashMap::new()).unwrap();
     thread::sleep(Duration::from_millis(1000)); // give player time to get ready
-    run_midi(&mut scheduler, 50, player);
+    run_midi(Arc::new(Mutex::new(&mut scheduler)), 50, player);
 }
 
 #[test]
@@ -119,6 +121,7 @@ fn a() {
                         pitch: Pitch(4, 9),
                     }
                 ],
+                rests: vec![],
             }, MusicTime(0, Beat::zero())),
         ],
         lookahead: MusicTime(1, Beat::zero()),

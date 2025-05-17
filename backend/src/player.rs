@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
@@ -8,8 +8,10 @@ use midly::live::LiveEvent;
 use midly::MidiMessage;
 use rodio::{OutputStream, OutputStreamHandle, Source};
 use crate::composition::{Event, Instrument, Pitch, Volume};
+use crate::constants::get_fuzzy_mapping;
 use crate::time::Seconds;
 
+pub type MidiChannel = u8;
 
 pub struct AtomicSound {
     pub start: Seconds,
@@ -100,27 +102,46 @@ impl Player {
 
 pub struct MidiPlayer {
     name: String,
-    port_mapping: HashMap<Instrument, usize>,
+    channel_mapping: HashMap<Instrument, MidiChannel>,
+    instrument_mapping: HashMap<Instrument, u8>,
     conn: Arc<HashMap<usize, Mutex<midir::MidiOutputConnection>>>,
 }
 
 impl MidiPlayer {
-    pub fn new(name: String, port_mapping: HashMap<Instrument, usize>) -> Result<Self, Box<dyn std::error::Error>> {
+    /// Create a new player with a name and a mapping. Mapping may be empty.
+    pub fn new(name: String, channel_mapping: HashMap<Instrument, MidiChannel>) -> Result<Self, Box<dyn std::error::Error>> {
         let midi_out = midir::MidiOutput::new(&name)?;
         let out_ports = midi_out.ports();
         println!("Available output ports:");
         let mut conns = HashMap::new();
         for (i, p) in out_ports.iter().enumerate() {
-            let midi_out = midir::MidiOutput::new(&name)?;
-            println!("{}: {}", i, midi_out.port_name(p)?);
-            let conn = midi_out.connect(p, &format!("midir-connection-{i}"))?;
-            conns.insert(i, Mutex::new(conn));
+            println!("{}: {} : {}", i, midi_out.port_name(p)?, p.id());
+            // let port = &midi_out.ports()[i];
+            // let conn = midi_out.connect(port, &format!("midir-connection-{i}"))?;
+            // conns.insert(i, Mutex::new(conn));
         }
         // // Pick a port
         // let port = &out_ports[0];
         // let conn = midi_out.connect(port, "midir-connection")?;
         // let conn = Arc::new(Mutex::new(conn));
-        Ok(MidiPlayer { name, port_mapping, conn: Arc::new(conns) })
+        conns.insert(0, Mutex::new(midi_out.connect(&out_ports[0], "music-turtles")?));
+        println!("Created {} connections", conns.len());
+        Ok(MidiPlayer { name, channel_mapping, conn: Arc::new(conns), instrument_mapping: get_fuzzy_mapping() })
+    }
+
+    /// Returns the channel for the instrument, and true if it is a new channel
+    fn get_channel(&mut self, instrument: Instrument) -> (MidiChannel, bool) {
+        if let Some(ch) = self.channel_mapping.get(&instrument) {
+            (*ch, false)
+        } else {
+            let mut ch = 0;
+            let channels_taken: HashSet<_> = self.channel_mapping.values().map(|x| *x).collect();
+            while channels_taken.contains(&ch) || (ch == 9 && !instrument.is_percussion()) {
+                ch += 1;
+            }
+            self.channel_mapping.insert(instrument, ch);
+            (ch, true)
+        }
     }
 }
 
@@ -128,7 +149,22 @@ impl AudioPlayer for MidiPlayer {
     fn play(&mut self, event: AtomicSound) {
         let note = event.pitch.to_midi_note();
         let volume = ((event.volume.0 as f32 / 100.) * 128.) as u8;
-        let channel = 0;
+        let (channel, new_channel) = self.get_channel(event.instrument);
+        let program_change_message = if new_channel {
+            let instrument_program_num = *self.instrument_mapping.get(&event.instrument).unwrap();
+            println!("{:?} -> {} -> {}", event.instrument, channel, instrument_program_num);
+            let ev = LiveEvent::Midi {
+                channel: channel.into(),
+                message: MidiMessage::ProgramChange {
+                    program: instrument_program_num.into()
+                }
+            };
+            let mut buf = Vec::new();
+            ev.write(&mut buf).unwrap();
+            Some(buf)
+        } else {
+            None
+        };
         let note_on_message = |channel: u8, key: u8, vol: u8| {
             let ev = LiveEvent::Midi {
                 channel: channel.into(),
@@ -153,13 +189,17 @@ impl AudioPlayer for MidiPlayer {
             ev.write(&mut buf).unwrap();
             buf
         };
-        let instrument_port = self.port_mapping.get(&event.instrument)
-            .map(|x| *x)
-            .unwrap_or(0);
+        let instrument_port = 0;
+            // self.port_mapping.get(&event.instrument)
+            // .map(|x| *x)
+            // .unwrap_or(0);
         let arc = Arc::clone(&self.conn);
         let thread_conn = Arc::clone(&self.conn);
         let mut conn = arc.get(&instrument_port).unwrap().lock()
             .unwrap();
+        if let Some(msg) = program_change_message {
+            conn.send(&msg).unwrap();
+        }
         conn.send(&note_on_message(channel, note, volume)).unwrap();
         let duration = event.duration;
         thread::spawn(move || {
