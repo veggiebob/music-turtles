@@ -1,8 +1,9 @@
-use std::ops::Add;
+use std::ops::{Add, Div};
 use std::collections::HashMap;
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use enumkit::EnumValues;
+use num::Integer;
 use crate::time::{Beat, MusicTime, TimeSignature};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Serialize, Deserialize, EnumValues)]
@@ -189,11 +190,7 @@ impl Track {
 
     pub fn transpose(&mut self, semitones: i8) {
         for event in &mut self.events {
-            // todo: fix!!!
-            let Pitch(octave, note_num) = event.pitch;
-            let new_note_num = (note_num as i8 + semitones).rem_euclid(12) as NoteNum;
-            let new_octave = octave + (note_num as i8 + semitones - 12) / 12;
-            event.pitch = Pitch(new_octave, new_note_num);
+            event.pitch.transpose(semitones);
         }
     }
 }
@@ -257,6 +254,13 @@ impl Pitch {
             11 => "Ab",
             _ => panic!("Invalid note number")
         }.to_string()
+    }
+
+    pub fn transpose(&mut self, semitones: i8) {
+        let Pitch(octave, note_num) = *self;
+        let new_note_num = (note_num as i8 + semitones).rem_euclid(12) as u8;
+        let new_octave = octave + ((note_num as i8 + semitones) as f32 / 12.).floor() as i8;
+        *self = Pitch(new_octave, new_note_num);
     }
 }
 
@@ -337,5 +341,59 @@ impl FromStr for Instrument {
                     .ok_or(format!("Unknown instrument: {}", s))
             }
         }
+    }
+}
+
+mod composition_element_tests {
+    use crate::composition::Pitch;
+
+    fn assert_epsilon_close(a: f32, b: f32) {
+        if (a - b).abs() < 0.01 {
+            ()
+        } else {
+            panic!("left={} is not close to right={}", a, b);
+        }
+    }
+
+    #[test]
+    fn test_pitch_to_frequency_1() {
+        let pitch = Pitch(4, 0); // C4
+        let frequency = pitch.to_frequency();
+        assert_epsilon_close(frequency, 261.63);
+    }
+
+    #[test]
+    fn test_pitch_to_frequency_2() {
+        let pitch = Pitch(3, 0); // C3
+        let frequency = pitch.to_frequency();
+        assert_epsilon_close(frequency, 261.63 / 2.);
+    }
+
+    #[test]
+    fn test_transpose_1() {
+        let mut pitch = Pitch(4, 0); // C4
+        pitch.transpose(2);
+        assert_eq!(pitch, Pitch(4, 2)); // D4
+    }
+
+    #[test]
+    fn test_transpose_2() {
+        let mut pitch = Pitch(4, 0); // C4
+        pitch.transpose(-1);
+        assert_eq!(pitch, Pitch(3, 11)); // B3
+    }
+
+    #[test]
+    fn test_transpose_3() {
+        let mut pitch = Pitch(4, 2); // D4
+        pitch.transpose(-7);
+        assert_eq!(pitch, Pitch(3, 7)); // G3
+    }
+
+    #[test]
+    fn test_transpose_4() {
+        let mut pitch = Pitch(4, 0); // C4
+        pitch.transpose(12);
+        assert_eq!(pitch, Pitch(5, 0)); // C5
     }
 }
