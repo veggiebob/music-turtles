@@ -137,10 +137,10 @@ pub fn main() {
     ]).unwrap();
     let axiom = "S";
     let time_signature = TimeSignature::common();
-    let bpm: BPM = 120.0;
-    let grm_path = "../data/beat-1.grm";
-    let grm_contents = std::fs::read_to_string(grm_path).unwrap();
-    let grammar = Grammar::from_str(&grm_contents).unwrap();
+    let bpm: BPM = 240.0;
+    let mt_path = "../data/bach_prelude_in_c.grm";
+    let mt_contents = std::fs::read_to_string(mt_path).unwrap();
+    let grammar = Grammar::from_str(&mt_contents).unwrap();
     let mut string = MusicString::from_str(axiom).unwrap();
     for _i in 0..20 {
         // println!("After {} iters: {}", i, string.to_string());
@@ -156,7 +156,7 @@ pub fn main() {
         time_signature,
         tracks: vec![],
         lookahead: MusicTime::measures(1),
-        looped: true,
+        looped: false,
         loop_time: music.get_duration(),
     };
     let channel_mapping = Instrument::values().into_iter().map(|i| (i, match i {
@@ -169,29 +169,29 @@ pub fn main() {
     scheduler.set_composition(music);
     let sched = Arc::new(Mutex::new(scheduler));
     let update_sched = Arc::clone(&sched);
-    let watcher = file_watcher(grm_path, move |file_contents| {
-        match Grammar::from_str(&file_contents) {
-            Ok(g) => {
-                match MusicString::from_str(axiom) {
-                    Ok(s) => {
-                        let string = s.parallel_rewrite_n(&g, true, 20);
-                        info!("Final string: {string:?}");
-                        match string.compose(time_signature, None) {
-                            Ok(comp) => {
-                                info!("unlocking...");
-                                let mut lock = update_sched.lock().unwrap();
-                                lock.set_composition(comp);
-                                info!("Reloaded composition");
-                            }
-                            Err(e) => warn!("Couldn't compose.\n{e:?}")
-                        }
-                    }
-                    Err(e) => warn!("Couldn't parse axiom: {e:?}")
-                }
-            }
-            Err(e) => warn!("Unable to parse grammar: {e:?}")
-        }
-    }, 2.);
+    // let watcher = file_watcher(grm_path, move |file_contents| {
+    //     match Grammar::from_str(&file_contents) {
+    //         Ok(g) => {
+    //             match MusicString::from_str(axiom) {
+    //                 Ok(s) => {
+    //                     let string = s.parallel_rewrite_n(&g, true, 20);
+    //                     info!("Final string: {string:?}");
+    //                     match string.compose(time_signature, None) {
+    //                         Ok(comp) => {
+    //                             info!("unlocking...");
+    //                             let mut lock = update_sched.lock().unwrap();
+    //                             lock.set_composition(comp);
+    //                             info!("Reloaded composition");
+    //                         }
+    //                         Err(e) => warn!("Couldn't compose.\n{e:?}")
+    //                     }
+    //                 }
+    //                 Err(e) => warn!("Couldn't parse axiom: {e:?}")
+    //             }
+    //         }
+    //         Err(e) => warn!("Unable to parse grammar: {e:?}")
+    //     }
+    // }, 2.);
 
     let player = MidiPlayer::new("music-turtles".to_string(), channel_mapping).unwrap();
     thread::sleep(Duration::from_millis(1000)); // give player time to get ready

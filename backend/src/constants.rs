@@ -147,6 +147,6 @@ pub fn get_instrument_by_fuzzy_name(name: &str) -> u8 {
 
 pub fn get_fuzzy_mapping() -> HashMap<Instrument, u8> {
     Instrument::str_values()
-        .map(|(i, i_str)| (i, get_instrument_by_fuzzy_name(i_str)))
+        .map(|(i, i_str)| (i, get_instrument_by_fuzzy_name(&i_str)))
         .collect()
 }

@@ -10,6 +10,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,10 +32,25 @@ pub enum MusicPrimitive {
     Split {
         branches: Vec<MusicString>
     },
+    #[deprecated]
     Repeat {
         num: usize,
         content: MusicString,
     },
+    Transform {
+        transform: MusicTransform,
+        content: MusicString
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MusicTransform {
+    Transpose {
+        semitones: i8,
+    },
+    Repeat {
+        num: usize,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +128,16 @@ impl FromStr for Grammar {
 pub enum ComposeError {
     MismatchedLengths(String),
 
+}
+
+impl Display for MusicTransform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            MusicTransform::Transpose { semitones } => format!("T{}", semitones),
+            MusicTransform::Repeat { num } => format!("x{}", num),
+        };
+        write!(f, "{}", str)
+    }
 }
 
 impl MusicString {
@@ -258,6 +284,36 @@ impl MusicString {
                     // println!("total duration for {num} repeats is {total_duration:?}, or {:?} * {num}",
                     //          composed.get_duration());
                     total_duration
+                },
+                MusicPrimitive::Transform { transform, content } => {
+                    match transform {
+                        MusicTransform::Transpose { semitones} => {
+                            let mut composed = content.compose(time_signature, Some(current_instrument))?;
+                            composed.transpose(*semitones);
+                            composed.shift_by(current_mt);
+                            let duration = composed.get_duration();
+                            add_composition(&mut tracks, composed);
+                            duration
+                        }
+                        MusicTransform::Repeat { num } => {
+                            let composed = content.compose(time_signature, Some(current_instrument))?;
+                            let duration = composed.get_duration();
+                            let mut offset = current_mt;
+                            for _i in 0..*num {
+                                let mut comp_i = composed.clone();
+                                comp_i.shift_by(offset);
+                                add_composition(&mut tracks, comp_i);
+                                offset = offset.with(time_signature) + duration;
+                            }
+                            let mut total_duration = MusicTime::zero();
+                            for _i in 0..*num {
+                                total_duration = total_duration.with(time_signature) + duration;
+                            }
+                            // println!("total duration for {num} repeats is {total_duration:?}, or {:?} * {num}",
+                            //          composed.get_duration());
+                            total_duration
+                        }
+                    }
                 }
             };
             current_mt = current_mt.with(time_signature) + duration;
@@ -298,6 +354,13 @@ impl MusicString {
                         content: new_content,
                     });
                 }
+                MusicPrimitive::Transform { transform, content } => {
+                    let new_content = content.parallel_rewrite(grammar, random);
+                    new_string.push(MusicPrimitive::Transform {
+                        transform: transform.clone(),
+                        content: new_content,
+                    });
+                }
             }
         }
         MusicString(new_string)
@@ -332,6 +395,11 @@ impl ToString for MusicString {
                 }
                 MusicPrimitive::Repeat { num, content } => {
                     s.push_str(&format!("[{}][", num));
+                    s.push_str(&content.to_string());
+                    s.push(']');
+                }
+                MusicPrimitive::Transform { transform, content } => {
+                    s.push_str(&format!("[{}][", transform));
                     s.push_str(&content.to_string());
                     s.push(']');
                 }
@@ -438,13 +506,5 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
-    use serde_json::Deserializer;
-
-    #[test]
-    fn test() {
-        let data = vec![1, 2, 3];
-        let mut c = Cursor::new(data);
-        let deserializer = Deserializer::new(c);
-    }
+    
 }

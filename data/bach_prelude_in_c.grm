@@ -1,0 +1,49 @@
+start S
+
+B = 1 2 3 1 4 5 6 7 8 9 10 11 12 13 14 15 16 17 [T-12][1]
+S = Copen Dopen Eopen Fopen Gopen Aopen Bopen
+A = 1 18
+
+
+C6 = :e :g :5c
+C6/4   = :4g :5c :5e
+Dm6/4 = :5a :5d :5f
+D6 = :f# :5a :5d
+D7no5 = :d :f# :5c
+Edim7no5 = :e :g :5c#
+F6 = :a :c :f
+G6/4 = :d :g :5b
+G7no3 = :4g :5d :5f
+G7no5 = :3g :b :f
+Bdim6 = :d :f :5b
+Copen = :c :g :5c
+Dopen = [T2][Copen]
+Eopen = [T4][Copen]
+Fopen = [T5][Copen]
+Gopen = [T7][Copen]
+Aopen = [T9][Copen]
+Bopen = [T11][Copen]
+
+
+1 = [x2][:c :e [x2][C6/4]]
+2 = [x2][:c :d [x2][Dm6/4]]
+3 = [x2][:b :d [x2][G7no3]]
+4 = [x2][:c :e [x2][Aopen]]
+5 = [x2][:c :d [x2][D6]]
+6 = [x2][:b :d [x2][Gopen]]
+7 = [x2][:b :c [x2][C6]]
+8 = [x2][:a :c [x2][C6]]
+9 = [x2][:3d :a [x2][D7no5]]
+10 = [x2][:3g :b [x2][G6/4]]
+11 = [x2][:3g :bb [x2][Edim7no5]]
+12 = [x2][:3f :a [x2][Dopen]]
+13 = [x2][:3f :3ab [x2][Bdim6]]
+14 = [x2][:3e :3g [x2][Copen]]
+15 = [x2][:3e :3f [x2][F6]]
+16 = [x2][:3d :3f [x2][F6]]
+17 = [x2][:2g :3d [x2][G7no5]]
+18 = [T-12][1]
+
+
+
+

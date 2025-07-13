@@ -2,7 +2,7 @@ use std::ops::Add;
 use std::collections::HashMap;
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
-use values_macro_derive::EnumValues;
+use enumkit::EnumValues;
 use crate::time::{Beat, MusicTime, TimeSignature};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Serialize, Deserialize, EnumValues)]
@@ -21,6 +21,10 @@ impl Instrument {
     pub fn is_percussion(&self) -> bool {
         // matches!(self, Instrument::Drum | Instrument::Snare | Instrument::Cymbal)
         false
+    }
+    pub fn str_values() -> impl Iterator<Item=(Instrument, String)> {
+        Instrument::values()
+            .map(|i| (i, format!("{:?}", i)))
     }
 }
 
@@ -182,6 +186,16 @@ impl Track {
                 e.start = e.start.with(time_signature) + offset
             );
     }
+
+    pub fn transpose(&mut self, semitones: i8) {
+        for event in &mut self.events {
+            // todo: fix!!!
+            let Pitch(octave, note_num) = event.pitch;
+            let new_note_num = (note_num as i8 + semitones).rem_euclid(12) as NoteNum;
+            let new_octave = octave + (note_num as i8 + semitones - 12) / 12;
+            event.pitch = Pitch(new_octave, new_note_num);
+        }
+    }
 }
 
 impl Add<Self> for Track {
@@ -275,6 +289,12 @@ impl Composition {
     pub fn shift_by(&mut self, offset: MusicTime) {
         self.tracks.iter_mut()
             .for_each(|tr| tr.shift_by(offset, self.time_signature));
+    }
+
+    pub fn transpose(&mut self, semitones: i8) {
+        for track in &mut self.tracks {
+            track.transpose(semitones);
+        }
     }
 }
 

@@ -1,15 +1,17 @@
 use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::str::FromStr;
 use crate::cfg::{Grammar, MusicString};
 use crate::composition::{Event, Instrument, Pitch, Track, TrackId, Volume};
-use crate::player::{MidiPlayer, Player};
 use crate::local_playback::{run, run_midi};
+use crate::player::{MidiPlayer, Player};
 use crate::scheduler::Scheduler;
 use crate::time::{Beat, MusicTime, TimeSignature};
 
+// ignore tests that play sounds
+#[ignore]
 #[test]
 fn compose_something() {
     let input = "{[3][:c<2> :d<2>] | [3][:c :g :f# :g]}";
@@ -29,9 +31,11 @@ fn compose_something() {
     let player = MidiPlayer::new("test".to_string(), HashMap::new()).unwrap();
     thread::sleep(Duration::from_millis(1000)); // give player time to get ready
     // run(&mut scheduler, 50, player);
-    run_midi(Arc::new(Mutex::new(&mut scheduler)), 50, player);
+    run_midi(Arc::new(Mutex::new(scheduler)), 50, player);
 }
 
+// ignore tests that play sounds
+#[ignore]
 #[test]
 fn run_file_grammar() {
     let input = "S";
@@ -58,9 +62,11 @@ fn run_file_grammar() {
     scheduler.set_composition(music);
     let player = MidiPlayer::new("test".to_string(), HashMap::new()).unwrap();
     thread::sleep(Duration::from_millis(1000)); // give player time to get ready
-    run_midi(Arc::new(Mutex::new(&mut scheduler)), 50, player);
+    run_midi(Arc::new(Mutex::new(scheduler)), 50, player);
 }
 
+// ignore tests that play sounds
+#[ignore]
 #[test]
 fn a() {
     let player = Player::new();

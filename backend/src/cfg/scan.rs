@@ -9,13 +9,17 @@ MusicString := MusicPrimitive*
 MusicPrimitive :=
   | Symbol
   | `{` (MusicString `|`)* MusicString? `}`
-  | `[` usize `][` MusicString `]`
+  | `[` MusicTransform `][` MusicString `]`
+
+MusicTransform :=
+    | `x` usize
+    | `T` Int
 
 Symbol :=
   | NonTerminal
   | `:` Terminal
 
-NonTerminal := [-a-zA-Z]
+NonTerminal := [-a-zA-Z1-9/]
 
 Terminal :=
   | Note (`<` Duration `>`)?
@@ -37,13 +41,13 @@ Volume := Int
 
 ```
 start S
-S = [3][:4c<1> :4d :_ :f# :g :c ::i=piano B]
+S = [x3][:4c<1> :4d :_ :f# :g :c ::i=piano B]
 B = :0c
 ```
 
 */
 
-use crate::cfg::{Grammar, MetaControl, MusicPrimitive, MusicString, NonTerminal, Production, Symbol, Terminal, TerminalNote};
+use crate::cfg::{Grammar, MetaControl, MusicPrimitive, MusicString, MusicTransform, NonTerminal, Production, Symbol, Terminal, TerminalNote};
 use crate::composition::{Instrument, Octave, Pitch, Volume};
 use crate::time::{Beat, MusicTime};
 
@@ -72,6 +76,7 @@ pub struct MusicStringScanner;
 pub struct MusicPrimitiveScanner;
 pub struct MusicPrimitiveSplitScanner;
 pub struct MusicPrimitiveRepeatScanner;
+pub struct MusicTransformScanner;
 
 pub struct SymbolScanner;
 
@@ -235,10 +240,11 @@ impl Scanner for MusicPrimitiveRepeatScanner {
                         let music_string = &rest[..end_bracket];
                         let scanner = consume(MusicStringScanner);
                         let music_string = scanner.scan(music_string).map(|(ms, _empty)| ms)?;
+                        let transform = consume(MusicTransformScanner).scan(repeat_num).map(|(ms, _empty)| ms)?;
                         let rest = &rest[end_bracket + 1..];
                         Ok((
-                            MusicPrimitive::Repeat {
-                                num: repeat_num.parse().unwrap(),
+                            MusicPrimitive::Transform {
+                                transform,
                                 content: music_string,
                             },
                             rest,
@@ -254,6 +260,36 @@ impl Scanner for MusicPrimitiveRepeatScanner {
             }
         } else {
             Err(ScanError::Generic("Expected '['".to_string()))
+        }
+    }
+}
+
+impl Scanner for MusicTransformScanner {
+    type Output = MusicTransform;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // if it starts with 'x', then scan a positive integer
+        // if it starts with 'T', then scan an integer
+        // otherwise, return an error
+        if let Some(first) = input.chars().next() {
+            match first {
+                'x' => {
+                    let num: usize = (&input[1..]).parse().map_err(|_| ScanError::Generic("Expected positive integer after 'x'".to_string()))?;
+                    Ok((MusicTransform::Repeat {
+                        num,
+                    }, ""))
+                }
+                'T' => {
+                    let num = &input[1..];
+                    let num = num.parse().map_err(|_| ScanError::Generic("Expected integer after 'T'".to_string()))?;
+                    Ok((MusicTransform::Transpose {
+                        semitones: num,
+                    }, ""))
+                }
+                _ => Err(ScanError::Generic(format!("Expected MusicTransform but found {first}"))),
+            }
+        } else {
+            Err(ScanError::Generic("Expected MusicTransform".to_string()))
         }
     }
 }
@@ -339,7 +375,7 @@ impl Scanner for NoteScanner {
                             note += 1;
                             consumed += 1;
                         } else if next == 'b' {
-                            note -= 1;
+                            note = (note + 11) % 12; // 'b' is a flat, so we subtract 1 from the note
                             consumed += 1;
                         }
                     }
@@ -435,13 +471,14 @@ impl Scanner for NonTerminalScanner {
     type Output = String;
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
-        // scan [-a-zA-Z] and return largest prefix
+        // scan [-a-zA-Z0-9/] and return largest prefix
+        let is_nt_char = |c: char| c.is_alphabetic() || c == '-' || c.is_ascii_digit() || c == '/';
         let mut chars = input.chars();
         if let Some(first) = chars.next() {
-            if first.is_alphabetic() || first == '-' {
+            if is_nt_char(first) {
                 let mut non_terminal = first.to_string();
                 while let Some(c) = chars.next() {
-                    if c.is_alphanumeric() || c == '-' {
+                    if is_nt_char(c) {
                         non_terminal.push(c);
                     } else {
                         return Ok((non_terminal, chars.as_str()));
@@ -751,11 +788,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cfg::scan::{consume, ConsumeScanner, DurationScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
+    use crate::cfg::scan::{consume, ConsumeScanner, DurationScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, MusicTransformScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
 
     #[test]
     fn test_1() {
-        let input = "start S\nS = [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]\nB = :0c";
+        let input = "start S\nS = [x3][:4c<1> :4d :_ :f# :g :c ::i=piano B]\nB = :0c";
         let scanner = consume(GrammarScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -764,7 +801,7 @@ mod test {
 
     #[test]
     fn test_instrument() {
-        let input = "sine";
+        let input = "piano";
         let scanner = ConsumeScanner(InstrumentScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -809,7 +846,7 @@ mod test {
 
     #[test]
     fn test_meta_control() {
-        let input = "i=sine";
+        let input = "i=piano";
         let scanner = ConsumeScanner(MetaControlScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -818,7 +855,7 @@ mod test {
 
     #[test]
     fn test_meta_control_terminal() {
-        let input = ":i=sine";
+        let input = ":i=piano";
         let scanner = ConsumeScanner(TerminalScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -854,7 +891,7 @@ mod test {
 
     #[test]
     fn symbol_scanner_2() {
-        let input = "::i=sine";
+        let input = "::i=piano";
         let scanner = ConsumeScanner(SymbolScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -873,7 +910,7 @@ mod test {
     #[test]
     fn music_string_scanner_0() {
         // without any repeats or splits so far
-        let input = ":4c<1> :4d :_ :f# :g :c ::i=sine Ba-c";
+        let input = ":4c<1> :4d :_ :f# :g :c ::i=piano Ba-c";
         let scanner = ConsumeScanner(MusicStringScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -883,7 +920,7 @@ mod test {
     #[test]
     fn music_string_scanner_1() {
         // without any repeats or splits so far
-        let input = ":4c<1> :4d :_ :f# :g :c ::i=sine B";
+        let input = ":4c<1> :4d :_ :f# :g :c ::i=piano B";
         let scanner = ConsumeScanner(MusicStringScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -891,8 +928,35 @@ mod test {
     }
 
     #[test]
+    fn music_transform_scanner_1() {
+        let input = "x3";
+        let scanner = ConsumeScanner(MusicTransformScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn music_transform_scanner_2() {
+        let input = "T1";
+        let scanner = ConsumeScanner(MusicTransformScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn music_transform_scanner_3() {
+        let input = "T-1";
+        let scanner = ConsumeScanner(MusicTransformScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn music_primitive_repeat_scanner() {
-        let input = "[3][:4c<1> :4d :_ :f# :g :c ::i=sine B]";
+        let input = "[x3][:4c<1> :4d :_ :f# :g :c ::i=piano B]";
         let scanner = ConsumeScanner(MusicPrimitiveRepeatScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -901,7 +965,7 @@ mod test {
 
     #[test]
     fn music_primitive_split_scanner() {
-        let input = "{:4c<1> :4d :_ :f# :g :c ::i=sine B | :4c<1> :4d :_ :f# :g :c ::i=sine B }";
+        let input = "{:4c<1> :4d :_ :f# :g :c ::i=piano B | :4c<1> :4d :_ :f# :g :c ::i=piano B }";
         let scanner = ConsumeScanner(MusicPrimitiveScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -911,7 +975,7 @@ mod test {
     #[test]
     fn music_string_scanner_2() {
         // with splits and repeats
-        let input = "{:4c<1> :4d :_ :f# :g :c ::i=sine B | [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]}";
+        let input = "{:4c<1> :4d :_ :f# :g :c ::i=piano B | [x3][:4c<1> :4d :_ :f# :g :c ::i=piano B]}";
         let scanner = ConsumeScanner(MusicStringScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
@@ -920,12 +984,10 @@ mod test {
 
     #[test]
     fn production_scanner_1() {
-        let input = "S = [3][:4c<1> :4d :_ :f# :g :c ::i=sine B]";
+        let input = "S = [x3][:4c<1> :4d :_ :f# :g :c ::i=piano B]";
         let scanner = ConsumeScanner(ProductionScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
         assert!(result.is_ok());
     }
-
-
 }
