@@ -4,7 +4,7 @@ pub mod interactive;
 use crate::cfg::scan::{consume, MusicStringScanner, ScanError};
 use crate::cfg::scan::{GrammarScanner, Scanner};
 use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
-use crate::time::{Beat, MusicTime, TimeSignature};
+use crate::time::{Beat, MusicTime, TimeCompression, TimeSignature};
 use num::Zero;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,6 @@ use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grammar {
     start: NonTerminal,
@@ -44,12 +43,16 @@ pub enum MusicPrimitive {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum MusicTransform {
     Transpose {
         semitones: i8,
     },
     Repeat {
         num: usize,
+    },
+    Compression {
+        factor: TimeCompression,
     }
 }
 
@@ -135,6 +138,7 @@ impl Display for MusicTransform {
         let str = match self {
             MusicTransform::Transpose { semitones } => format!("T{}", semitones),
             MusicTransform::Repeat { num } => format!("x{}", num),
+            MusicTransform::Compression { factor } => format!(">>{}", factor.to_string()),
         };
         write!(f, "{}", str)
     }
@@ -312,6 +316,14 @@ impl MusicString {
                             // println!("total duration for {num} repeats is {total_duration:?}, or {:?} * {num}",
                             //          composed.get_duration());
                             total_duration
+                        }
+                        MusicTransform::Compression { factor } => {
+                            let mut composed = content.compose(time_signature, Some(current_instrument))?;
+                            composed.compress(*factor);
+                            composed.shift_by(current_mt);
+                            let duration = composed.get_duration();
+                            add_composition(&mut tracks, composed);
+                            duration
                         }
                     }
                 }

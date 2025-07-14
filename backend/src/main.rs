@@ -40,7 +40,6 @@ mod composition;
 
 mod time;
 mod cfg;
-pub mod serde;
 
 #[cfg(test)]
 mod test;
@@ -138,7 +137,7 @@ pub fn main() {
     let axiom = "S";
     let time_signature = TimeSignature::common();
     let bpm: BPM = 240.0;
-    let mt_path = "../data/bach_prelude_in_c.grm";
+    let mt_path = "../data/bach_prelude_in_c.mtx";
     let mt_contents = std::fs::read_to_string(mt_path).unwrap();
     let grammar = Grammar::from_str(&mt_contents).unwrap();
     let mut string = MusicString::from_str(axiom).unwrap();

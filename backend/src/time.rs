@@ -1,4 +1,5 @@
-use std::ops::{Add, Sub};
+use std::fmt::Display;
+use std::ops::{Add, Mul, Sub};
 use num::rational::Ratio;
 use num::{FromPrimitive, ToPrimitive, Zero};
 use serde::{Deserialize, Serialize, Serializer};
@@ -24,6 +25,9 @@ pub struct Beat(Ratio<BeatUnit>);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TimeSignature(pub BeatUnit, pub BeatUnit);
+
+#[derive(Debug, Clone, Copy)]
+pub struct TimeCompression(pub Ratio<isize>);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct MusicTimeWithSignature {
@@ -158,6 +162,20 @@ impl Sub<MusicTime> for MusicTimeWithSignature {
     }
 }
 
+impl Mul<Ratio<BeatUnit>> for MusicTimeWithSignature {
+    type Output = MusicTimeWithSignature;
+
+    fn mul(self, rhs: Ratio<BeatUnit>) -> Self::Output {
+        let total_beats = self.total_beats();
+        let new_total_beats = Beat(total_beats.0 * rhs);
+        let music_time = new_total_beats.as_music_time(self.time_signature);
+        MusicTimeWithSignature {
+            time: music_time,
+            time_signature: self.time_signature,
+        }
+    }
+}
+
 impl MusicTimeWithSignature {
     pub fn total_beats(&self) -> Beat {
         Beat::new(self.time.0 * self.time_signature.0 as BeatUnit, 1) + self.time.1
@@ -200,6 +218,40 @@ impl<'de> Deserialize<'de> for Beat {
     }
 }
 
+impl Serialize for TimeCompression {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+    {
+        let mut state = serializer.serialize_struct("TimeCompression", 1)?;
+        state.serialize_field("numerator", &self.0.numer())?;
+        state.serialize_field("denominator", &self.0.denom())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TimeCompression {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        #[derive(Deserialize)]
+        struct TimeCompression {
+            numerator: isize,
+            denominator: isize,
+        }
+
+        let data = TimeCompression::deserialize(deserializer)?;
+        Ok(TimeCompression(Ratio::new(data.numerator, data.denominator)))
+    }
+}
+
+impl Display for TimeCompression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.0.numer(), self.0.denom())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -236,4 +288,3 @@ mod test {
         assert_eq!(mt1.with(ts) - mt2, MusicTime(1, Beat::whole(1)));
     }
 }
-

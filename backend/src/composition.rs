@@ -4,7 +4,8 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use enumkit::EnumValues;
 use num::Integer;
-use crate::time::{Beat, MusicTime, TimeSignature};
+use num::rational::Ratio;
+use crate::time::{Beat, BeatUnit, MusicTime, TimeCompression, TimeSignature};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Serialize, Deserialize, EnumValues)]
 pub enum Instrument {
@@ -139,17 +140,17 @@ impl Track {
     }
     pub fn get_start(&self) -> Option<MusicTime> {
         min_option(self.events.iter()
-            .map(|e| e.start)
-            .min(), self.rests.iter()
-            .map(|e| e.start)
-            .min())
+                       .map(|e| e.start)
+                       .min(), self.rests.iter()
+                       .map(|e| e.start)
+                       .min())
     }
     pub fn get_end(&self, time_signature: TimeSignature) -> Option<MusicTime> {
         max_option(self.events.iter()
-            .map(|e| e.get_end(time_signature))
-            .max(), self.rests.iter()
-                .map(|e| e.get_end(time_signature))
-                .max())
+                       .map(|e| e.get_end(time_signature))
+                       .max(), self.rests.iter()
+                       .map(|e| e.get_end(time_signature))
+                       .max())
     }
 
     pub fn get_duration(&self, time_signature: TimeSignature) -> MusicTime {
@@ -191,6 +192,40 @@ impl Track {
     pub fn transpose(&mut self, semitones: i8) {
         for event in &mut self.events {
             event.pitch.transpose(semitones);
+        }
+    }
+
+    /// Flip entire track, keeping it within its start/end bounds.
+    pub fn reverse(&mut self, time_signature: TimeSignature) {
+        if let (Some(start), Some(end)) = (self.get_start(), self.get_end(time_signature)) {
+            self.events.iter_mut()
+                .chain(self.rests.iter_mut())
+                .for_each(|e| {
+                    let offset = e.start.with(time_signature) - start;
+                    let new_start = (end.with(time_signature) - offset).with(time_signature) - e.duration.as_music_time(time_signature);
+                    e.start = new_start;
+                });
+            self.events.reverse();
+            self.rests.reverse();
+        }
+    }
+
+    /// Compress all timings by the compression factor.
+    /// Example: if the factor is 0.5, it will compress the track to half its length.
+    pub fn compress(&mut self, time_signature: TimeSignature, compression: TimeCompression) {
+        let factor = compression.0;
+        if factor < Ratio::new(0, 1) {
+            self.reverse(time_signature);
+        }
+        let factor = Ratio::new(factor.numer().abs() as BeatUnit, factor.denom().abs() as BeatUnit);
+        if let (Some(start), Some(end)) = (self.get_start(), self.get_end(time_signature)) {
+            self.events.iter_mut()
+                .chain(self.rests.iter_mut())
+                .for_each(|e| {
+                    let offset = (e.start.with(time_signature) - start).with(time_signature) * factor;
+                    e.start = start.with(time_signature) + offset.time;
+                    e.duration = (e.duration.as_music_time(time_signature).with(time_signature) * factor).total_beats();
+                });
         }
     }
 }
@@ -264,7 +299,7 @@ impl Pitch {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Composition {
     pub tracks: Vec<Track>,
     pub time_signature: TimeSignature,
@@ -298,6 +333,15 @@ impl Composition {
     pub fn transpose(&mut self, semitones: i8) {
         for track in &mut self.tracks {
             track.transpose(semitones);
+        }
+    }
+
+    /// Compress all timings by the compression factor toward the start of the track.
+    /// If the factor is negative, it will reverse the track.
+    /// Example, if the factor is 0.5, it will compress the track to half its length.
+    pub fn compress(&mut self, compression: TimeCompression) {
+        for track in &mut self.tracks {
+            track.compress(self.time_signature, compression);
         }
     }
 }
@@ -345,7 +389,10 @@ impl FromStr for Instrument {
 }
 
 mod composition_element_tests {
-    use crate::composition::Pitch;
+    use num::rational::Ratio;
+    use rodio::cpal::BufferSize::Default;
+    use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
+    use crate::time::{Beat, MusicTime, TimeCompression, TimeSignature};
 
     fn assert_epsilon_close(a: f32, b: f32) {
         if (a - b).abs() < 0.01 {
@@ -395,5 +442,135 @@ mod composition_element_tests {
         let mut pitch = Pitch(4, 0); // C4
         pitch.transpose(12);
         assert_eq!(pitch, Pitch(5, 0)); // C5
+    }
+
+    fn comp_template(events: Vec<Event>) -> Composition {
+        Composition {
+            tracks: vec![
+                Track {
+                    identifier: TrackId::Custom(0),
+                    instrument: Instrument::SineWave,
+                    events,
+                    rests: vec![],
+                }
+            ],
+            time_signature: TimeSignature::common(),
+        }
+    }
+
+    #[test]
+    fn test_compression_1() {
+        let compression = TimeCompression(Ratio::new(1, 2)); // 50% compression
+        let mut composition1 = comp_template(vec![
+            Event {
+                start: MusicTime::measures(1),
+                duration: Beat::whole(2),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            }
+        ]);
+        let composition_half = comp_template(vec![
+            Event {
+                start: MusicTime::measures(1),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            }
+        ]);
+        composition1.compress(compression);
+        assert_eq!(composition1, composition_half);
+    }
+
+    #[test]
+    fn test_compression_2() {
+        let compression = TimeCompression(Ratio::new(-1, 1)); // -100% compression (reverse)
+        let mut composition1 = comp_template(vec![
+            Event {
+                start: MusicTime::measures(1),
+                duration: Beat::whole(2),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            }
+        ]);
+        let composition_reversed = comp_template(vec![
+            Event {
+                start: MusicTime::measures(1),
+                duration: Beat::whole(2),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            }
+        ]);
+        composition1.compress(compression);
+        assert_eq!(composition1, composition_reversed);
+    }
+
+    #[test]
+    fn test_compression_3() {
+        let compression = TimeCompression(Ratio::new(-1, 1)); // -100% compression (reverse)
+        let mut composition1 = comp_template(vec![
+            Event {
+                start: MusicTime(1, Beat::whole(0)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            },
+            Event {
+                start: MusicTime(1, Beat::whole(1)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 1),
+            }
+        ]);
+        let composition_reversed = comp_template(vec![
+            Event {
+                start: MusicTime(1, Beat::whole(0)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 1),
+            },
+            Event {
+                start: MusicTime(1, Beat::whole(1)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            }
+        ]);
+        composition1.compress(compression);
+        assert_eq!(composition1, composition_reversed);
+    }
+
+    #[test]
+    fn test_compression_4() {
+        let compression = TimeCompression(Ratio::new(1, 2)); // 50% compression
+        let mut composition1 = comp_template(vec![
+            Event {
+                start: MusicTime(1, Beat::whole(0)),
+                duration: Beat::whole(2),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            },
+            Event {
+                start: MusicTime(1, Beat::whole(2)),
+                duration: Beat::whole(2),
+                volume: Volume(100),
+                pitch: Pitch(4, 1),
+            }
+        ]);
+        let composition_half = comp_template(vec![
+            Event {
+                start: MusicTime(1, Beat::whole(0)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            },
+            Event {
+                start: MusicTime(1, Beat::whole(1)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 1),
+            }
+        ]);
+        composition1.compress(compression);
+        assert_eq!(composition1, composition_half);
     }
 }

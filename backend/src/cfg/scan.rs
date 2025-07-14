@@ -1,5 +1,7 @@
 /*
 
+Informally, line comments starting with `//` are allowed.
+
 Grammar := `start ` NonTerminal `\n` Production*
 
 Production := NonTerminal `=` MusicString
@@ -14,12 +16,13 @@ MusicPrimitive :=
 MusicTransform :=
     | `x` usize
     | `T` Int
+    | `>>` Fraction
 
 Symbol :=
   | NonTerminal
   | `:` Terminal
 
-NonTerminal := [-a-zA-Z1-9/]
+NonTerminal := [-a-zA-Z1-9/#]
 
 Terminal :=
   | Note (`<` Duration `>`)?
@@ -46,10 +49,10 @@ B = :0c
 ```
 
 */
-
+use num::rational::Ratio;
 use crate::cfg::{Grammar, MetaControl, MusicPrimitive, MusicString, MusicTransform, NonTerminal, Production, Symbol, Terminal, TerminalNote};
 use crate::composition::{Instrument, Octave, Pitch, Volume};
-use crate::time::{Beat, MusicTime};
+use crate::time::{Beat, MusicTime, TimeCompression};
 
 
 #[derive(Debug)]
@@ -87,6 +90,7 @@ pub struct TerminalScanner;
 pub struct NoteScanner;
 
 pub struct DurationScanner;
+pub struct FractionScanner;
 
 pub struct MetaControlScanner;
 
@@ -101,6 +105,7 @@ impl Scanner for GrammarScanner {
         let lines = input.lines()
             .map(|line| line.trim())
             .filter(|line| !line.is_empty())
+            .filter(|line| !line.trim().starts_with("//"))
             .collect::<Vec<_>>();
         if lines.is_empty() {
             return Err(ScanError::Generic("Expected at least one line".to_string()));
@@ -270,6 +275,7 @@ impl Scanner for MusicTransformScanner {
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
         // if it starts with 'x', then scan a positive integer
         // if it starts with 'T', then scan an integer
+        // if it starts with '>>', then scan a Duration
         // otherwise, return an error
         if let Some(first) = input.chars().next() {
             match first {
@@ -285,6 +291,16 @@ impl Scanner for MusicTransformScanner {
                     Ok((MusicTransform::Transpose {
                         semitones: num,
                     }, ""))
+                }
+                '>' if input.starts_with(">>") => {
+                    let (fraction, rest) = consume(FractionScanner).scan(&input[2..])
+                        .map_err(|_| ScanError::Generic("Expected fraction after '>>'".to_string()))?;
+                    Ok((MusicTransform::Compression {
+                        // use reciprocal because the user expects the inverse.
+                        // ex. If they do `>>2` they expect the music to go twice as fast,
+                        //  meaning half the time.
+                        factor: TimeCompression(fraction.recip())
+                    }, rest))
                 }
                 _ => Err(ScanError::Generic(format!("Expected MusicTransform but found {first}"))),
             }
@@ -324,8 +340,8 @@ impl Scanner for TerminalScanner {
             None,
             scan_map(concat(NoteScanner, DurationScanner), |(note, duration)| {
                 Terminal::Music {
-                    note: note,
-                    duration: duration,
+                    note,
+                    duration,
                 }
             }),
         )
@@ -432,6 +448,29 @@ impl Scanner for DurationScanner {
     }
 }
 
+impl Scanner for FractionScanner {
+    type Output = Ratio<isize>;
+
+    fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
+        // scan a fraction in the form of "num/denom"
+        let mut parts = input.split('/');
+        match (parts.next().and_then(|s| s.parse().ok()), parts.next().and_then(|s| s.parse().ok())) {
+            (Some(num), Some(denom)) => {
+                if denom == 0 {
+                    Err(ScanError::Generic("Denominator cannot be zero".to_string()))
+                } else {
+                    Ok((Ratio::new(num, denom), ""))
+                }
+            }
+            (Some(num), None) => {
+                // if only numerator is provided, assume denominator is 1
+                Ok((Ratio::new(num, 1), ""))
+            }
+            _ => Err(ScanError::Generic("Expected fraction in the form of num/denom".to_string())),
+        }
+    }
+}
+
 impl Scanner for MetaControlScanner {
     type Output = MetaControl;
 
@@ -472,7 +511,7 @@ impl Scanner for NonTerminalScanner {
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
         // scan [-a-zA-Z0-9/] and return largest prefix
-        let is_nt_char = |c: char| c.is_alphabetic() || c == '-' || c.is_ascii_digit() || c == '/';
+        let is_nt_char = |c: char| c.is_alphabetic() || c == '-' || c.is_ascii_digit() || c == '/' || c == '#';
         let mut chars = input.chars();
         if let Some(first) = chars.next() {
             if is_nt_char(first) {
@@ -788,7 +827,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::cfg::scan::{consume, ConsumeScanner, DurationScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, MusicTransformScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
+    use num::rational::Ratio;
+    use crate::cfg::scan::{consume, ConsumeScanner, DurationScanner, FractionScanner, GrammarScanner, InstrumentScanner, MetaControlScanner, MusicPrimitiveRepeatScanner, MusicPrimitiveScanner, MusicStringScanner, MusicTransformScanner, NonTerminalScanner, NoteScanner, ProductionScanner, Scanner, SymbolScanner, TerminalScanner, VolumeScanner};
 
     #[test]
     fn test_1() {
@@ -815,6 +855,30 @@ mod test {
         let result = scanner.scan(input);
         println!("result: {result:#?}");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_fraction() {
+        let input = "3/4";
+        let scanner = consume(FractionScanner);
+        let result = scanner.scan(input).unwrap().0;
+        assert_eq!(result, Ratio::new(3isize, 4isize));
+    }
+
+    #[test]
+    fn test_fraction_2() {
+        let input = "-3/4";
+        let scanner = consume(FractionScanner);
+        let result = scanner.scan(input).unwrap().0;
+        assert_eq!(result, Ratio::new(-3isize, 4isize));
+    }
+
+    #[test]
+    fn test_fraction_3() {
+        let input = "3";
+        let scanner = consume(FractionScanner);
+        let result = scanner.scan(input).unwrap().0;
+        assert_eq!(result, Ratio::new(3isize, 1isize));
     }
 
     #[test]
