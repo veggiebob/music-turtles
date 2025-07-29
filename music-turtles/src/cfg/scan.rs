@@ -972,6 +972,15 @@ mod test {
     }
 
     #[test]
+    fn symbol_scanner_4() {
+        let input = "?";
+        let scanner = ConsumeScanner(SymbolScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn music_string_scanner_0() {
         // without any repeats or splits so far
         let input = ":4c<1> :4d :_ :f# :g :c ::i=piano Ba-c";
@@ -1025,6 +1034,15 @@ mod test {
         let result = scanner.scan(input);
         println!("result: {result:#?}");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn music_primitive_repeat_bad_string_test_1() {
+        let input = "[x3][nont? nont2]";
+        let scanner = ConsumeScanner(MusicPrimitiveRepeatScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_err());
     }
 
     #[test]

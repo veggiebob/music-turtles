@@ -45,7 +45,7 @@ fn run_file_grammar() {
     let mut string = MusicString::from_str(input).unwrap();
     for i in 0..4 {
         println!("After {} iters: {}", i, string.to_string());
-        string = string.parallel_rewrite(&grammar, true);
+        string = string.parallel_rewrite(&grammar, true, true);
     }
     println!("Final string: {}", string.to_string());
 

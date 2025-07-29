@@ -336,7 +336,10 @@ impl MusicString {
         })
     }
 
-    pub fn parallel_rewrite(&self, grammar: &Grammar, random: bool) -> Self {
+    /// Rewrites the music string according to the grammar, replacing non-terminals with their productions.
+    /// If `random` is true, it will choose a random production for each non-terminal.
+    /// If `panic_on_bad_production` is true, it will panic if a non-terminal has no production.
+    pub fn parallel_rewrite(&self, grammar: &Grammar, random: bool, panic_on_bad_production: bool) -> Self {
         let mut new_string = vec![];
         for (i, mp) in self.0.iter().enumerate() {
             match mp {
@@ -345,7 +348,9 @@ impl MusicString {
                         if let Some(Production(nt, ms)) = if random { grammar.get_production_random(nt) } else { grammar.get_production(nt) } {
                             new_string.extend(ms.clone().0);
                         } else {
-                            println!("Warning: no production for {nt:?}");
+                            if panic_on_bad_production {
+                                panic!("No production found for non-terminal {:?} at index {}", nt, i);
+                            }
                         }
                     }
                     x => {
@@ -355,19 +360,19 @@ impl MusicString {
                 MusicPrimitive::Split { branches } => {
                     let new_branches = branches
                         .iter()
-                        .map(|ms| ms.parallel_rewrite(grammar, random))
+                        .map(|ms| ms.parallel_rewrite(grammar, random, panic_on_bad_production))
                         .collect::<Vec<_>>();
                     new_string.push(MusicPrimitive::Split { branches: new_branches });
                 }
                 MusicPrimitive::Repeat { num, content } => {
-                    let new_content = content.parallel_rewrite(grammar, random);
+                    let new_content = content.parallel_rewrite(grammar, random, panic_on_bad_production);
                     new_string.push(MusicPrimitive::Repeat {
                         num: *num,
                         content: new_content,
                     });
                 }
                 MusicPrimitive::Transform { transform, content } => {
-                    let new_content = content.parallel_rewrite(grammar, random);
+                    let new_content = content.parallel_rewrite(grammar, random, panic_on_bad_production);
                     new_string.push(MusicPrimitive::Transform {
                         transform: transform.clone(),
                         content: new_content,
@@ -378,10 +383,10 @@ impl MusicString {
         MusicString(new_string)
     }
 
-    pub fn parallel_rewrite_n(&self, grammar: &Grammar, random: bool, n: usize) -> Self {
+    pub fn parallel_rewrite_n(&self, grammar: &Grammar, random: bool, panic_on_bad_production: bool, n: usize) -> Self {
         let mut new_string = self.clone();
         for _i in 0..n {
-            new_string = new_string.parallel_rewrite(grammar, random);
+            new_string = new_string.parallel_rewrite(grammar, random, panic_on_bad_production);
         }
         new_string
     }
@@ -405,11 +410,7 @@ impl ToString for MusicString {
                     s.push_str(&str);
                     s.push('}');
                 }
-                MusicPrimitive::Repeat { num, content } => {
-                    s.push_str(&format!("[{}][", num));
-                    s.push_str(&content.to_string());
-                    s.push(']');
-                }
+                MusicPrimitive::Repeat { num, content } => panic!("Repeat is deprecated, use Transform instead"),
                 MusicPrimitive::Transform { transform, content } => {
                     s.push_str(&format!("[{}][", transform));
                     s.push_str(&content.to_string());
