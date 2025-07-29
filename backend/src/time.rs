@@ -60,14 +60,14 @@ impl Beat {
     pub fn zero() -> Self {
         Beat(Ratio::zero())
     }
-    
+
     pub fn numerator(&self) -> BeatUnit {
         self.0.numer().to_u32().unwrap_or_else(|| {
             println!("WARNING: Beat {self:?} numerator could not be converted to u32. Defaulting to 0.");
             0
         })
     }
-    
+
     pub fn denominator(&self) -> BeatUnit {
         self.0.denom().to_u32().unwrap_or_else(|| {
             println!("WARNING: Beat {self:?} denominator could not be converted to u32. Defaulting to 1.");
@@ -87,10 +87,14 @@ impl MusicTime {
     pub fn from_seconds(time_signature: TimeSignature, bpm: BPM, seconds: Seconds) -> Self {
         let bps = bpm / 60.;
         let beats = bps * seconds;
-        let beats = Beat(Ratio::from_f32(beats).unwrap());
+        // instead of using Ratio::from_f32, I'll calculate the fraction myself
+        let precision = 1000000.0; // to avoid floating point precision issues
+        let numerator = (beats * precision).floor() as BeatUnit;
+        let denominator = precision as BeatUnit;
+        let beats = Beat(Ratio::new(numerator, denominator));
         beats.as_music_time(time_signature)
     }
-    
+
     pub fn from_whole_beats(time_signature: TimeSignature, beats: BeatUnit) -> Self {
         let measures = beats / time_signature.0;
         let beats = beats % time_signature.0;
@@ -271,7 +275,7 @@ mod test {
         let mt2 = MusicTime(0, Beat::whole(3));
         assert_eq!(mt1.with(ts) - mt2, MusicTime(0, Beat::whole(1)));
     }
-    
+
     #[test]
     fn test_music_time_sub_2() {
         let ts = TimeSignature::common();

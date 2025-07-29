@@ -1,0 +1,28 @@
+start S
+
+// 0: Midi Through:Midi Through Port-0 14:0 : 14:0
+// 1: LMMS:bassdrum_acoustic01.ogg 128:0 : 128:0
+// 2: LMMS:hihat_opened02.ogg 128:1 : 128:1
+// 3: LMMS:hihat_closed05.ogg 128:2 : 128:2
+// 4: LMMS:snare_acoustic01.ogg 128:3 : 128:3
+// 5: LMMS:snare07.ogg 128:4 : 128:4
+// let channel_mapping = Instrument::values().into_iter().map(|i| (i, match i {
+//     BassDrum => 0,
+//     HiHatOpen => 1,
+//     HiHatClosed => 2,
+//     Snare => 3,
+//     Snare2 => 4,
+//     _ => 0xf,
+// })).collect();
+
+S = A
+
+A = [>>1/2][{ hbongos | lbongos }]
+
+hbongos = ::i=bongohigh [x2][:_] [x2][:3a]
+lbongos = ::i=bongolow [x2][:5a] [x2][:_]
+
+test = testbass testhats testsnare
+testbass = ::i=bassdrum [x2][:4a]
+testhats = ::i=hihatopen [x2][:4a] ::i=hihatclosed [x2][:4a]
+testsnare = ::i=snare [x2][:4a] ::i=snare2 [x2][:4a]

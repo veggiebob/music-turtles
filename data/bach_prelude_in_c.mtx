@@ -1,7 +1,7 @@
 start S
 
 // S = BachPreludeInC
-S = [>>-1][BachPreludeInC]
+S = BachPreludeInC
 // https://michaelkravchuk.com/wp-content/uploads/2019/12/Bach-Prelude-In-C-Major-1.pdf
 BachPreludeInC = 1 2 3 1 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 25 26 29 EndF EndG EndC
 
@@ -63,6 +63,6 @@ Bopen = [T11][Copen]
 
 EndF = :2c :3b :3f :a :c :f :c :a :c :a :3f :a :3f :3d :3f :3d
 EndG = :2c :3b :g :5b :5d :5f :5d :5b :5d :5b :g :5b :d :f :e :d
-EndC = { :2c<16> | :3c<16> | :e<16> | :g<16> | :5c<16> }
+EndC = [>>1/16][{ :2c | :3c | :e | :g | :5c }]
 
 

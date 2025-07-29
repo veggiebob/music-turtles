@@ -42,15 +42,15 @@ where
             let start_time = SystemTime::now();
             let mut scheduler = scheduler;
             loop {
-                let mut scheduler = scheduler.lock().unwrap();
-                if scheduler.ended() {
-                    drop(scheduler);
+                let mut guard = scheduler.lock().unwrap();
+                if guard.ended() {
+                    drop(guard);
                     break;
                 }
                 let elapsed_s = start_time.elapsed().unwrap().as_secs_f32();
-                let events = scheduler.get_next_events_and_update(elapsed_s);
-                info!("{events:#?}");
-                drop(scheduler);
+                let events = guard.get_next_events_and_update(elapsed_s);
+                // info!("{events:#?}");
+                drop(guard);
                 for event in events {
                     event_send.send(event).unwrap();
                 }

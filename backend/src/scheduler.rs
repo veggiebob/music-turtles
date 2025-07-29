@@ -148,3 +148,122 @@ impl Scheduler {
         sounds
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::composition::{Composition, Event, Instrument, Pitch, Track, TrackId, Volume};
+    use crate::scheduler::{ScheduledSound, Scheduler};
+    use crate::time::{Beat, Measure, MusicTime, Seconds, TimeSignature};
+
+    fn comp_template(events: Vec<Event>) -> Composition {
+        Composition {
+            tracks: vec![
+                Track {
+                    identifier: TrackId::Custom(0),
+                    instrument: Instrument::SineWave,
+                    events,
+                    rests: vec![],
+                }
+            ],
+            time_signature: TimeSignature::common(),
+        }
+    }
+
+    fn simulate_play_collect_events(
+        mut scheduler: Scheduler,
+        duration: Seconds,
+        interval: Seconds,
+    ) -> Vec<ScheduledSound> {
+        let mut emitted_sounds = vec![];
+        for i in (0..(duration / interval) as u64) {
+            let elapsed = i as Seconds * interval;
+            let sounds = scheduler.get_next_events_and_update(elapsed);
+            emitted_sounds.extend(sounds);
+        }
+        emitted_sounds
+    }
+    #[test]
+    fn test_scheduler_1() {
+        let comp = comp_template(vec![
+            Event {
+                start: MusicTime(0, Beat::whole(0)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            },
+            Event {
+                start: MusicTime(0, Beat::whole(1)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 1),
+            },
+            Event {
+                start: MusicTime(0, Beat::whole(2)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 2),
+            },
+            Event {
+                start: MusicTime(0, Beat::whole(3)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 3),
+            }
+        ]);
+        let mut scheduler = Scheduler {
+            bpm: 120.0,
+            time_signature: TimeSignature::common(),
+            tracks: vec![],
+            lookahead: MusicTime::measures(1),
+            looped: false,
+            loop_time: MusicTime::measures(4),
+        };
+        scheduler.set_composition(comp);
+        let sounds = simulate_play_collect_events(scheduler, 5.0, 0.05);
+        assert_eq!(sounds.len(), 4);
+        assert_eq!(sounds.iter().map(|s| s.pitch).collect::<Vec<_>>(),
+                   vec![Pitch(4, 0), Pitch(4, 1), Pitch(4, 2), Pitch(4, 3)]);
+    }
+    #[test]
+    fn test_scheduler_2() {
+        let comp = comp_template(vec![
+            Event {
+                start: MusicTime(0, Beat::whole(0)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 0),
+            },
+            Event {
+                start: MusicTime(0, Beat::whole(3)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 3),
+            },
+            Event {
+                start: MusicTime(0, Beat::whole(2)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 2),
+            },
+            Event {
+                start: MusicTime(0, Beat::whole(1)),
+                duration: Beat::whole(1),
+                volume: Volume(100),
+                pitch: Pitch(4, 1),
+            }
+        ]);
+        let mut scheduler = Scheduler {
+            bpm: 120.0,
+            time_signature: TimeSignature::common(),
+            tracks: vec![],
+            lookahead: MusicTime::measures(1),
+            looped: false,
+            loop_time: MusicTime::measures(4),
+        };
+        scheduler.set_composition(comp);
+        let sounds = simulate_play_collect_events(scheduler, 5.0, 0.05);
+        assert_eq!(sounds.len(), 4);
+        assert_eq!(sounds.iter().map(|s| s.pitch).collect::<Vec<_>>(),
+                   vec![Pitch(4, 0), Pitch(4, 1), Pitch(4, 2), Pitch(4, 3)]);
+    }
+}

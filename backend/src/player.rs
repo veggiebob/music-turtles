@@ -150,9 +150,10 @@ impl AudioPlayer for MidiPlayer {
         let note = event.pitch.to_midi_note();
         let volume = ((event.volume.0 as f32 / 100.) * 128.) as u8;
         let (channel, new_channel) = self.get_channel(event.instrument);
+        info!("Playing instrument {:?} on channel {}", event.instrument, channel);
         let program_change_message = if new_channel {
             let instrument_program_num = *self.instrument_mapping.get(&event.instrument).unwrap();
-            println!("{:?} -> {} -> {}", event.instrument, channel, instrument_program_num);
+            info!("{:?} -> {} -> {}", event.instrument, channel, instrument_program_num);
             let ev = LiveEvent::Midi {
                 channel: channel.into(),
                 message: MidiMessage::ProgramChange {
@@ -190,9 +191,6 @@ impl AudioPlayer for MidiPlayer {
             buf
         };
         let instrument_port = 0;
-            // self.port_mapping.get(&event.instrument)
-            // .map(|x| *x)
-            // .unwrap_or(0);
         let arc = Arc::clone(&self.conn);
         let thread_conn = Arc::clone(&self.conn);
         let mut conn = arc.get(&instrument_port).unwrap().lock()

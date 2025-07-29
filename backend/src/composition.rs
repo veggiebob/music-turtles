@@ -1,5 +1,6 @@
 use std::ops::{Add, Div};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use enumkit::EnumValues;
@@ -13,6 +14,11 @@ pub enum Instrument {
     Piano,
     Bass,
     // percussion
+    BassDrum,
+    HiHatOpen,
+    HiHatClosed,
+    Snare,
+    Snare2,
     BongoHigh,
     BongoLow,
     Shaker1,
@@ -98,14 +104,14 @@ fn max_option<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
 }
 
 impl Track {
-    pub fn visualize(&self, columns: usize, time_signature: TimeSignature) -> String {
+    pub fn visualize(&self, columns: usize, time_signature: TimeSignature, start: MusicTime, end: MusicTime) -> String {
         let mut s = String::new();
         s.push('[');
-        let duration = self.get_duration(time_signature);
         let bpm = 1.;
-        let total_time = duration.to_seconds(time_signature, bpm);
+        let start_time = start.to_seconds(time_signature, bpm);
+        let end_time = end.to_seconds(time_signature, bpm);
         for i in 0..columns {
-            let time = (i as f32 / columns as f32) * total_time;
+            let time = start_time + (end_time - start_time) * i as f32 / columns as f32;
             let mt = MusicTime::from_seconds(time_signature, bpm, time);
             let evts = self.get_events_at(mt, time_signature);
             let rest_evts = self.get_rests_at(mt, time_signature);
@@ -308,8 +314,18 @@ pub struct Composition {
 impl Composition {
     pub fn visualize(&self, columns: usize) -> String {
         let mut s = String::new();
+        let start = MusicTime::zero();
+        let end = if let Some(end) = self.get_end() {
+            end
+        } else {
+            return "[No music in this composition]".to_string();
+        };
         for track in &self.tracks {
-            s.push_str(&track.visualize(columns, self.time_signature));
+            // pad name of track to fit in the columns
+            s.push_str(&format!("{:>12} ", track.identifier.to_string()));
+            // print number of events
+            // s.push_str(&format!("({:>5} events) ", track.events.len()));
+            s.push_str(&track.visualize(columns, self.time_signature, start, end));
             s.push('\n');
         }
         s
@@ -323,6 +339,18 @@ impl Composition {
             (Some(start), Some(end)) => end.with(self.time_signature) - start,
             _ => MusicTime::zero()
         }
+    }
+
+    pub fn get_start(&self) -> Option<MusicTime> {
+        self.tracks.iter()
+            .filter_map(|t| t.get_start())
+            .min()
+    }
+
+    pub fn get_end(&self) -> Option<MusicTime> {
+        self.tracks.iter()
+            .filter_map(|t| t.get_end(self.time_signature))
+            .max()
     }
 
     pub fn shift_by(&mut self, offset: MusicTime) {
@@ -572,5 +600,14 @@ mod composition_element_tests {
         ]);
         composition1.compress(compression);
         assert_eq!(composition1, composition_half);
+    }
+}
+
+impl Display for TrackId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrackId::Instrument(instrument) => write!(f, "{:?}", instrument),
+            TrackId::Custom(id) => write!(f, "Custom({})", id),
+        }
     }
 }

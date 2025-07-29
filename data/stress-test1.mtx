@@ -1,0 +1,9 @@
+start S
+
+S = M M M M
+
+M = { Boom | Clap }
+
+Boom = :3c :_  :3c :_
+Clap = :_  :3g :_  :3g
+

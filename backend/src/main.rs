@@ -137,7 +137,7 @@ pub fn main() {
     let axiom = "S";
     let time_signature = TimeSignature::common();
     let bpm: BPM = 240.0;
-    let mt_path = "../data/bach_prelude_in_c.mtx";
+    let mt_path = "../data/beat-1.mtx";
     let mt_contents = std::fs::read_to_string(mt_path).unwrap();
     let grammar = Grammar::from_str(&mt_contents).unwrap();
     let mut string = MusicString::from_str(axiom).unwrap();
@@ -149,7 +149,7 @@ pub fn main() {
 
     let music = string.compose(time_signature, None).unwrap();
     info!("Final music: \n{}", music.visualize(150));
-    println!("{music:#?}");
+    // println!("{music:#?}");
     let mut scheduler = Scheduler {
         bpm,
         time_signature,
