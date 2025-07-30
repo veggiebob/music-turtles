@@ -22,7 +22,7 @@ Symbol :=
   | NonTerminal
   | `:` Terminal
 
-NonTerminal := [-a-zA-Z1-9/#]
+NonTerminal := [-a-zA-Z1-9/#\?]
 
 Terminal :=
   | Note (`<` Duration `>`)?
@@ -49,6 +49,7 @@ B = :0c
 ```
 
 */
+use std::collections::HashSet;
 use num::rational::Ratio;
 use crate::cfg::{Grammar, MetaControl, MusicPrimitive, MusicString, MusicTransform, NonTerminal, Production, Symbol, Terminal, TerminalNote};
 use crate::composition::{Instrument, Octave, Pitch, Volume};
@@ -167,8 +168,7 @@ impl Scanner for MusicStringScanner {
                     remaining_input = new_input;
                 }
                 Err(e) => {
-                    println!("Error scanning MusicString: {:?}. Remaining input: {remaining_input}", e);
-                    break;
+                    return Err(e);
                 }
             }
         }
@@ -511,7 +511,9 @@ impl Scanner for NonTerminalScanner {
 
     fn scan<'a>(&self, input: &'a str) -> Result<(Self::Output, &'a str)> {
         // scan [-a-zA-Z0-9/] and return largest prefix
-        let is_nt_char = |c: char| c.is_alphabetic() || c == '-' || c.is_ascii_digit() || c == '/' || c == '#';
+        let other_allowed_chars: HashSet<char> = "-/#?".chars().collect();
+        let is_nt_char = |c: char| c.is_alphabetic() || c.is_ascii_digit() ||
+            other_allowed_chars.contains(&c);
         let mut chars = input.chars();
         if let Some(first) = chars.next() {
             if is_nt_char(first) {
@@ -520,7 +522,9 @@ impl Scanner for NonTerminalScanner {
                     if is_nt_char(c) {
                         non_terminal.push(c);
                     } else {
-                        return Ok((non_terminal, chars.as_str()));
+                        // prepend chars with c
+                        let rest = &input[non_terminal.len()..];
+                        return Ok((non_terminal, rest));
                     }
                 }
                 Ok((non_terminal, chars.as_str()))
@@ -973,8 +977,26 @@ mod test {
 
     #[test]
     fn symbol_scanner_4() {
-        let input = "?";
+        let input = "(";
         let scanner = ConsumeScanner(SymbolScanner);
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn primitive_scanner_1() {
+        let input = "(";
+        let scanner = MusicPrimitiveScanner;
+        let result = scanner.scan(input);
+        println!("result: {result:#?}");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn primitive_scanner_2() {
+        let input = "[x2][(]";
+        let scanner = MusicPrimitiveRepeatScanner;
         let result = scanner.scan(input);
         println!("result: {result:#?}");
         assert!(result.is_err());
@@ -1038,7 +1060,7 @@ mod test {
 
     #[test]
     fn music_primitive_repeat_bad_string_test_1() {
-        let input = "[x3][nont? nont2]";
+        let input = "[x3][nont( nont2]";
         let scanner = ConsumeScanner(MusicPrimitiveRepeatScanner);
         let result = scanner.scan(input);
         println!("result: {result:#?}");
