@@ -32,6 +32,10 @@ test2-bass = ::i=bassdrum :a :a :_ :a
 test2-hats = ::i=hihatopen :_ :_ :a :_
 test2-snare = ::i=snare :_ :_ :_ :_
 
-test3 = [x4][{ ::i=bassdrum test2-bass? }]
+test3 = [x1][{ ::i=bassdrum test2-bass? | ::i=bassdrum test2-hats? | ::i=snare test2-snare? }]
 test2-bass? = :a :a :_ :a test2-bass?
 test2-bass? = :_ :_ :_ :_ test2-bass?
+test2-hats? = :_ :_ :a :_ test2-hats?
+test2-hats? = :_ :_ :_ :_ test2-hats?
+test2-snare? = :a :a :_ :_ test2-snare?
+test2-snare? = [>>2][[x4][:_ :a]] test2-snare?

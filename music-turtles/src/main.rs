@@ -136,8 +136,8 @@ pub fn main() {
     ]).unwrap();
     let axiom = "S";
     let time_signature = TimeSignature::common();
-    let bpm: BPM = 240.0;
-    let mt_path = "../data/beat-1.mtx";
+    let bpm: BPM = 120.0;
+    let mt_path = "data/beat-1.mtx";
     let mt_contents = std::fs::read_to_string(mt_path).unwrap();
     let grammar = Grammar::from_str(&mt_contents).unwrap();
     let mut string = MusicString::from_str(axiom).unwrap();
