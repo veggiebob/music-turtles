@@ -1,0 +1,30 @@
+start S
+
+S = [x2][funk]
+
+// 0: Midi Through:Midi Through Port-0 14:0 : 14:0
+// 1: LMMS:bassdrum_acoustic01.ogg 128:0 : 128:0
+// 2: LMMS:hihat_opened02.ogg 128:1 : 128:1
+// 3: LMMS:hihat_closed05.ogg 128:2 : 128:2
+// 4: LMMS:snare_acoustic01.ogg 128:3 : 128:3
+// 5: LMMS:snare07.ogg 128:4 : 128:4
+// let channel_mapping = Instrument::values().into_iter().map(|i| (i, match i {
+//     BassDrum => (1, 1),
+//     HiHatOpen => (2, 1),
+//     HiHatClosed => (3, 1),
+//     Snare => (4, 1),
+//     Snare2 => (5, 1),
+//     _ => (1, 1),
+// })).collect();
+
+// https://drumhelper.com/learning-drums/common-drum-beats-and-patterns/
+
+funk = { ::i=bassdrum bass | ::i=snare snare | ::i=hihatclosed hat }
+
+bass = b-note :_ [>>2][:_ b-note] :_
+hat = [x4][[>>2][[x2][::v=10 h-note]]]
+snare = :_ [>>4][s-note :_<2> s-note :_ s-note :_<2>] [>>2][s-note :_]
+
+b-note = :3a
+h-note = :e
+s-note = :e

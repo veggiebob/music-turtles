@@ -1,0 +1,28 @@
+start S
+
+S = [x2][funk-4]
+
+funk = funk-var1
+funk = funk-var2
+funk-4 = [x3][funk-var1] funk-var2
+funk-var1 = { ::i=bassdrum bass-var1 | ::i=snare snare-var1 | ::i=hihatclosed hat-var1 }
+funk-var2 = { ::i=bassdrum bass-var2 | ::i=snare snare-var2 | ::i=hihatclosed hat-var2 }
+
+bass-var1 = bass1 bass2
+bass-var2 = bass1 :_ :_
+bass1 = b-note :_
+bass2 = [>>2][:_ b-note] :_
+
+hat-var1 = hat1 hat2
+hat-var2 = hat1 :_ :_
+hat1 = [x2][[>>2][[x2][::v=10 h-note]]]
+hat2 = hat1
+
+snare-var1 = snare1 snare2
+snare-var2 = snare1 :_ [>>4][[x4][s-note]]
+snare1 = :_ [>>4][s-note :_<2> s-note]
+snare2 = [>>4][:_ s-note :_<2>] [>>2][s-note :_]
+
+b-note = :3a
+h-note = :e
+s-note = :e

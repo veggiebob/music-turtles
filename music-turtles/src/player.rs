@@ -142,7 +142,7 @@ impl AudioPlayer for MidiPlayer {
         let volume = ((event.volume.0 as f32 / 100.) * 128.) as u8;
         let (port, channel) = self.get_port_channel(event.instrument)
             .unwrap();
-        info!("Playing instrument {:?} on port {} channel {}", event.instrument, port, channel);
+        info!("Playing instrument {:?} on port {} channel {} at volume {}", event.instrument, port, channel, volume);
         let note_on_message = |channel: u8, key: u8, vol: u8| {
             let ev = LiveEvent::Midi {
                 channel: channel.into(),

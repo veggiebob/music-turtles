@@ -1,0 +1,13 @@
+start S
+
+S = [x3][{ [x2][funk] | [>>1/2][funk] }]
+
+funk = { ::i=bassdrum bass | ::i=snare snare | ::i=hihatclosed hat }
+
+bass = b-note :_ [>>2][:_ b-note] :_
+hat = [x4][[>>2][[x2][::v=10 h-note]]]
+snare = :_ [>>4][s-note :_<2> s-note :_ s-note :_<2>] [>>2][s-note :_]
+
+b-note = :3a
+h-note = :e
+s-note = :e

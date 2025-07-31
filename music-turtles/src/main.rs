@@ -137,7 +137,7 @@ pub fn main() {
     let axiom = "S";
     let time_signature = TimeSignature::common();
     let bpm: BPM = 120.0;
-    let mt_path = "data/beat-1.mtx";
+    let mt_path = "data/funky_bach.mtx";
     let mt_contents = std::fs::read_to_string(mt_path).unwrap();
     let grammar = Grammar::from_str(&mt_contents).unwrap();
     let mut string = MusicString::from_str(axiom).unwrap();
@@ -159,11 +159,12 @@ pub fn main() {
         loop_time: music.get_duration(),
     };
     let channel_mapping = Instrument::values().into_iter().map(|i| (i, match i {
-        BassDrum => (1, 1),
-        HiHatOpen => (2, 1),
-        HiHatClosed => (3, 1),
-        Snare => (4, 1),
-        Snare2 => (5, 1),
+        BassDrum => (2, 1),
+        HiHatOpen => (3, 1),
+        HiHatClosed => (4, 1),
+        Snare => (5, 1),
+        Snare2 => (6, 1),
+        Piano => (1, 1),
         _ => (1, 1),
     })).collect();
     scheduler.set_composition(music);
