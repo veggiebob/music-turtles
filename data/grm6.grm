@@ -1,7 +1,0 @@
-
-start S
-S = C
-C = :c D
-D = :d E
-E = :e C
-

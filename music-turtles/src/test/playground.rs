@@ -39,9 +39,9 @@ fn compose_something() {
 #[test]
 fn run_file_grammar() {
     let input = "S";
-    let grm_path = "../data/grm3.grm";
-    let grm_contents = std::fs::read_to_string(grm_path).unwrap();
-    let grammar = Grammar::from_str(&grm_contents).unwrap();
+    let mtx_path = "../data/stress-test1.mtx";
+    let mtx_contents = std::fs::read_to_string(mtx_path).unwrap();
+    let grammar = Grammar::from_str(&mtx_contents).unwrap();
     let mut string = MusicString::from_str(input).unwrap();
     for i in 0..4 {
         println!("After {} iters: {}", i, string.to_string());
